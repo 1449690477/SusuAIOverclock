@@ -13,6 +13,16 @@
 > 首次运行 Windows 提示「已保护你的电脑」→ 点 **更多信息 → 仍要运行**。无代码签名证书所致，非软件问题。
 > 若杀软拦截，请将 exe 与包目录加入白名单。
 
+**SHA-256 校验**（可选，验证下载完整）：
+
+```
+71A3433A462BFE40222BD353A2C63A4CF529EBA40FF71B8EA191CAABEBB7A23D
+```
+
+```powershell
+Get-FileHash .\SusuAIOverclock-1.2.0-portable.exe -Algorithm SHA256
+```
+
 ---
 
 ## 本版内容
