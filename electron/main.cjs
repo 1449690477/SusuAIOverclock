@@ -1,5 +1,20 @@
 'use strict';
 
+/* 启动耗时打点：仅 DANGO_TRACE=1 时生效，写入 DANGO_TRACE_FILE（默认 TEMP/dango-trace.log）。
+   生产环境完全不产生任何 IO 与输出。 */
+const T0 = Date.now();
+const TRACE_ON = process.env.DANGO_TRACE === '1';
+const TRACE_FILE = process.env.DANGO_TRACE_FILE || require('node:path').join(require('node:os').tmpdir(), 'dango-trace.log');
+const trace = (label) => {
+  if (!TRACE_ON) return;
+  try {
+    require('node:fs').appendFileSync(TRACE_FILE, `+${String(Date.now() - T0).padStart(5)}ms  ${label}\n`);
+  } catch {
+    /* 打点失败不影响启动 */
+  }
+};
+trace('=== main.cjs 开始执行 ===');
+
 /**
  * main.cjs — Dango Desk 主进程
  *
@@ -40,12 +55,19 @@ const os = require('node:os');
 const { spawn } = require('node:child_process');
 
 const core = require('./core.cjs');
+trace('require(core.cjs) 完成');
 
-// 无 GPU / 受限会话里 GPU 子进程会 fatal，统一走软件渲染。
-app.disableHardwareAcceleration();
-app.commandLine.appendSwitch('disable-gpu');
-app.commandLine.appendSwitch('disable-software-rasterizer');
-app.commandLine.appendSwitch('disable-gpu-compositing');
+// 正常桌面会话保留 Chromium 硬件加速，避免每次启动都额外拉起/初始化
+// 软件渲染链。确实运行在无 GPU 的自动化/受限会话时，用 DANGO_NO_GPU=1
+// 显式切换；不要同时使用 disable-gpu 和 disable-software-rasterizer，
+// 那会把唯一可用的渲染后端一起关掉，表现为子进程启动后立即退出。
+if (process.env.DANGO_NO_GPU === '1') {
+  app.disableHardwareAcceleration();
+  app.commandLine.appendSwitch('disable-gpu');
+  trace('DANGO_NO_GPU=1，已切换软件渲染');
+} else {
+  trace('保留 Chromium 硬件加速');
+}
 
 // 仅在自动化测试环境（DANGO_NO_SANDBOX=1）下放宽沙箱；
 // 正常双击运行时保持 Chromium 默认沙箱。
@@ -97,6 +119,7 @@ function resolveUserDir() {
 }
 
 const USER_DIR = resolveUserDir();
+trace('resolveUserDir 完成: ' + USER_DIR);
 const STATE_FILE = path.join(USER_DIR, 'state.json');
 const BASE_DIR = path.join(USER_DIR, 'baselines');
 const BACKUP_DIR = path.join(USER_DIR, 'backups');
@@ -555,11 +578,9 @@ async function scanPack(state, def) {
 
 async function buildHub() {
   const state = await loadState();
-  const packs = [];
-  for (const def of core.PACKS) {
-    // eslint-disable-next-line no-await-in-loop
-    packs.push(await scanPack(state, def));
-  }
+  // 六个包互不共享可变扫描状态。并行扫描避免启动时把六段目录 I/O
+  // 串成一条长链，尤其是首次从 resources/packs 读取时收益明显。
+  const packs = await Promise.all(core.PACKS.map((def) => scanPack(state, def)));
   const embeddedRoot = core.embeddedPacksRoot();
   return {
     root: state.root,
@@ -1100,6 +1121,7 @@ function registerIpc() {
 /* ------------------------------------------------------------------ 窗口 */
 
 function createWindow() {
+  trace('createWindow 进入');
   const iconPath = path.join(__dirname, '..', 'build', 'icon.png');
   win = new BrowserWindow({
     width: 1180,
@@ -1110,19 +1132,25 @@ function createWindow() {
     title: '苏苏 AI超频 · Susu AI Overclock',
     icon: fs.existsSync(iconPath) ? iconPath : undefined,
     autoHideMenuBar: true,
+    show: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
-      webSecurity: true
+      webSecurity: true,
+      backgroundThrottling: false
     }
   });
+  trace('BrowserWindow 构造完成');
 
   win.webContents.on('will-navigate', (e) => e.preventDefault());
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  win.webContents.once('did-finish-load', () => trace('渲染进程 did-finish-load'));
+  win.once('ready-to-show', () => trace('ready-to-show（窗口可见）'));
 
   win.loadFile(path.join(__dirname, '..', 'dist-electron', 'index.html'));
+  trace('loadFile 已调用');
 }
 
 /** 解析 --root=<path> / --root <path>，方便命令行直接指定根目录 */
@@ -1176,8 +1204,11 @@ async function applyRootArgOnce() {
 }
 
 app.whenReady().then(async () => {
+  trace('app.whenReady 触发');
   await applyRootArgOnce();
+  trace('applyRootArgOnce 完成');
   registerIpc();
+  trace('registerIpc 完成');
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

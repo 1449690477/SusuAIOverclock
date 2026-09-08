@@ -19,7 +19,8 @@
     "dev:electron": "npm run build && electron .",
     "smoke": "node tests/desktop-smoke.mjs",
     "test": "node --test tests/core.test.cjs",
-    "pack:portable": "vite build && electron-builder --win portable --x64"
+    "patch:portable": "node scripts/apply-portable-patch.cjs",
+    "pack:portable": "npm run patch:portable && vite build && electron-builder --win portable --x64"
   },
   "dependencies": {
     "http-proxy-agent": "^9.1.0",

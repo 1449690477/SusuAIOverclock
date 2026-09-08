@@ -8,6 +8,16 @@
 
 首个公开版本。
 
+### 性能
+
+- **便携版启动加速**：替换 electron-builder 原生 `portable.nsi` 为三级降级缓存启动器
+  - 原生模板每次双击都走「7z 解压 → CopyFiles 全量复制 → 退出删除」，本机实测 ~22s（`CopyFiles` 5279 个小文件占 15.3s）
+  - 改为 7z 直接解压进 `%LOCALAPPDATA%\SusuAIOverclock-cache\<version>`，写 `.cache-complete` 标记；后续启动命中缓存零解压
+  - 缓存不可写时回退原生 `$PLUGINSDIR` 行为，功能不受影响
+  - 实测：冷启动 **6.22s**、热启动 **0.78s**、`ready-to-show` 约 0.43s
+- **启动打点**：`DANGO_TRACE=1` + `DANGO_TRACE_FILE` 输出各阶段时间戳，生产环境零开销
+- 构建链新增 `scripts/apply-portable-patch.cjs`（`npm run patch:portable`），`pack:portable` 自动串接，避免 `node_modules` 重装后模板丢失
+
 ### 新增
 
 - **导入引擎**：支持导入整个破甲包目录，或单个规则文件（`.md` / `.mdc` / `.txt` / `.json` / `.yaml` / `.ps1` / `.py` …）

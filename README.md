@@ -101,6 +101,10 @@ Windows x64 桌面端 · Electron 33 + React 18 + TypeScript 5 · 免安装单�
 
 > 首次运行 Windows 会弹「已保护你的电脑」——点 **更多信息 → 仍要运行**。原因是没有代码签名证书，不是软件有问题。
 
+**启动速度**：第一次启动约 6 秒（需解压到本地缓存），之后每次约 0.8 秒。
+
+缓存目录 `%LOCALAPPDATA%\SusuAIOverclock-cache\1.2.0`，约 663 MB。删掉它下次会重新走一次冷启动，其余无副作用。
+
 ### 方式二：从源码构建
 
 ```bash
@@ -159,9 +163,11 @@ SusuAIOverclock-1.2.0-portable.exe
 | :-- | :-- | :-- |
 | 弹「已保护你的电脑」/ 未知发布者 | 无代码签名证书 | 更多信息 → 仍要运行 |
 | 杀软报毒 / 拦截 | 脚本类工具包的常见误报 | 把 exe 与包目录加入白名单 |
+| 第一次启动慢（约 6 秒） | 需把内嵌包解压到本地缓存 | 正常现象，之后每次约 0.8 秒 |
+| 缓存目录占 663 MB | 加速的代价，缓存六包解压结果 | 可随时删除，下次重新解压 |
 | `TypeError: Cannot read properties of undefined (reading 'app')` | 父进程污染了 `ELECTRON_RUN_AS_NODE=1`，electron.exe 退化成纯 Node 模式 | 清掉该环境变量，或直接双击 exe |
 | `Error: Failed to get 'userData' path` | `%APPDATA%` 被污染或不存在 | v1.2+ 已自动降级到 `~/.dango-desk` / 临时目录 |
-| 渲染进程 / GPU 进程 fatal | 无 GPU 或受限会话 | 默认走软件渲染；测试模式再加 `DANGO_NO_SANDBOX=1` |
+| 渲染进程 / GPU 进程 fatal | 无 GPU 或受限会话 | 默认保留硬件加速；极少数远程桌面 / 老旧显卡黑屏时再单独排查 |
 | `process failed to launch`（playwright） | env 里残留 `ELECTRON_RUN_AS_NODE` | smoke 脚本已自动清除 |
 
 ---
@@ -171,6 +177,7 @@ SusuAIOverclock-1.2.0-portable.exe
 ```bash
 npm test     # 38 个 core 单元测试（单文件识别 / 打分 / 路径解析 / 导入落地）
 npm run smoke # 真机冒烟：引导空态 + 六卡片部署 + 内嵌开箱即用 + 深度验证全流程
+node tests/verify-fast-start.cjs # 冷启动 / 热启动耗时对比（校验缓存命中）
 ```
 
 仓库内 `tests/` 还包含：
@@ -181,6 +188,7 @@ npm run smoke # 真机冒烟：引导空态 + 六卡片部署 + 内嵌开箱即�
 | `dialog-config.mjs` | 拦截 `dialog.showOpenDialog` 断言 properties 配置 |
 | `verify-single-packed.mjs` | 打包产物真 exe 的单文件导入验证 |
 | `verify-portable.mjs` | 便携版解包后完整性验证 |
+| `verify-fast-start.cjs` | 冷 / 热启动计时，验证缓存加速生效 |
 
 ---
 
@@ -198,7 +206,11 @@ dango-desk/
 │  └─ types.ts          # 渲染层与 IPC 的类型契约
 ├─ tests/               # 单元 + 真机冒烟 + 打包产物验证
 ├─ packed-packs/        # 六个工具包本体（不入库，构建时打入 resources/packs）
-└─ build/               # 图标等构建资源
+├─ scripts/
+│  └─ apply-portable-patch.cjs  # 把加速版 portable 模板注入 electron-builder
+└─ build/
+   ├─ icon.png
+   └─ portable-fast.nsi # 三级降级缓存启动器（替换原生模板）
 ```
 
 ---
