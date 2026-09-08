@@ -1,0 +1,12 @@
+# 统一换行，避免 Windows/Linux 协作时的 CRLF 噪音
+* text=auto eol=lf
+
+# 二进制文件不做行尾转换
+*.png binary
+*.jpg binary
+*.ico binary
+*.exe binary
+*.zip binary
+*.7z binary
+*.woff binary
+*.woff2 binary

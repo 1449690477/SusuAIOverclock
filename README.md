@@ -208,3 +208,18 @@ dango-desk/
 [MIT](./LICENSE) © Wanghan
 
 `packed-packs/` 内的六个工具包各自遵循其自身许可，不在本仓库分发范围内。
+
+---
+
+<div align="center">
+
+### 找到苏苏
+
+| 🐾 词元喵喵 Q 群 | 💖 苏苏的公益中转 |
+| :--: | :--: |
+| **https://qm.qq.com/q/IKd1i5X64S** | **https://susu.wiki/** |
+| 版本更新 · 踩坑互助 · 包内脚本答疑 | 群友专属 API 中转，多模型可用 |
+
+<sub>如果这个工具帮到了你，进群说声谢谢就够了 🌸</sub>
+
+</div>
