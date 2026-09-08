@@ -1,0 +1,79 @@
+{
+  "name": "dango-desk",
+  "version": "1.2.0",
+  "private": true,
+  "description": "苏苏 AI超频 - 六大工具包统一管理与模型会话监控",
+  "main": "electron/main.cjs",
+  "author": "Wanghan",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/1449690477/SusuAIOverclock.git"
+  },
+  "homepage": "https://github.com/1449690477/SusuAIOverclock#readme",
+  "bugs": {
+    "url": "https://github.com/1449690477/SusuAIOverclock/issues"
+  },
+  "scripts": {
+    "build": "vite build",
+    "dev:electron": "npm run build && electron .",
+    "smoke": "node tests/desktop-smoke.mjs",
+    "test": "node --test tests/core.test.cjs",
+    "pack:portable": "vite build && electron-builder --win portable --x64"
+  },
+  "dependencies": {
+    "http-proxy-agent": "^9.1.0",
+    "lucide-react": "^0.460.0",
+    "playwright-core": "^1.48.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.16.10",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.3",
+    "electron": "^33.0.2",
+    "electron-builder": "^25.1.8",
+    "playwright": "^1.48.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.10"
+  },
+  "build": {
+    "appId": "com.susu.ai-overclock",
+    "productName": "苏苏 AI超频",
+    "directories": {
+      "buildResources": "build",
+      "output": "release"
+    },
+    "files": [
+      "electron/**/*",
+      "dist-electron/**/*",
+      "build/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "packed-packs",
+        "to": "packs",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "win": {
+      "icon": "build/icon.png",
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "portable": {
+      "artifactName": "SusuAIOverclock-${version}-portable.exe"
+    }
+  }
+}

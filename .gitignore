@@ -1,0 +1,19 @@
+# deps
+node_modules/
+
+# build output
+dist-electron/
+release/
+
+# 六个工具包本体（377MB，不入库；构建时由 electron-builder 打入 resources/packs）
+packed-packs/
+
+# logs & temp
+*.log
+npm-debug.log*
+vite.config.mjs.timestamp-*.mjs
+
+# os
+.DS_Store
+Thumbs.db
+desktop.ini
