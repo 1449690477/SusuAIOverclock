@@ -4,6 +4,27 @@
 
 ---
 
+## [1.2.1] — 2026-09-09
+
+### 新增
+
+- **智汇AI · 破甲词库（自带）**
+  - 侧栏新增「破甲词库」视图，开机秒开 3134 条预设提示词（来自 `https://api.12300.top/user-prompt-library.html`）
+  - 启动器随包发布词库快照到 `resources/library/library.json`（~25MB，含 2269 条全文 + 865 条 preview 兜底，剩余按需联网补全）
+  - 卡片列表 + 关键词搜索 + 21 个分类筛选
+  - **成功率排序**（默认 ↓ 推荐优先），可切「成功率 ↑ / 长度 ↓ / 名称 A-Z」
+  - 多选批量注入：勾选任意多条 → 一键发到指定平台（cursor / codex / dsh / workbuddy / opencode / anti-gravity）
+  - 详情弹窗看完整内容，确认后单条注入
+  - 注入复用 `RULE_FILE_TARGETS` + `buildImportBlock`：cursor 走 `copy` 写 `~/.cursor/rules/shiyi-imported-*.mdc`，其余走 `append` 加到对应 `AGENTS.md` / `USER.md`，开头有精准标记块可卸载
+
+### 工具
+
+- `npm run scrape:library` —— 并行抓详情 API 到 `.scrape/details/`
+- `npm run snapshot:library` —— 合并生成 `build/library/library.json`
+- `npm run refresh:library` —— 一键抓取 + 重建快照
+
+---
+
 ## [1.2.0] — 2026-09-08
 
 首个公开版本。

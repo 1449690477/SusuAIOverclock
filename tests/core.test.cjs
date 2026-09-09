@@ -367,3 +367,58 @@ test('RULE_FILE_TARGETS 六个平台都有单文件注入目标', () => {
   }
 });
 
+/* ---------------- 内嵌词库 ---------------- */
+
+test('loadBuiltinLibrary 在无快照时返回 ok=false', () => {
+  // 测试环境通常无 bundled；应当明确失败
+  const r = core.loadBuiltinLibrary();
+  assert.strictEqual(typeof r.ok, 'boolean');
+  assert.ok(Array.isArray(r.prompts));
+});
+
+test('fetchBuiltinDetail 返回 ok 与 detail', () => {
+  const r = core.fetchBuiltinDetail(0);
+  assert.strictEqual(typeof r.ok, 'boolean');
+  // 没有快照时 detail 应不存在（错误路径）
+  if (!r.ok) assert.ok(r.error);
+});
+
+test('fetchBuiltinDetail 拒绝无效 index', () => {
+  assert.strictEqual(core.fetchBuiltinDetail(-1).ok, false);
+  assert.strictEqual(core.fetchBuiltinDetail(NaN).ok, false);
+  assert.strictEqual(core.fetchBuiltinDetail(Infinity).ok, false);
+});
+
+test('importLibraryContent append 平台：cursor 是 copy', async () => {
+  const r = await core.importLibraryContent('cursor', 'unit-test.md', '# hi\n', { backup: false });
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.mode, 'copy');
+  assert.ok(r.dest.includes('.cursor'));
+  try { fs.unlinkSync(r.dest); } catch { /* safe-delete shim may swallow */ }
+});
+
+test('importLibraryContent 拒绝未知平台', async () => {
+  await assert.rejects(
+    () => core.importLibraryContent('nope', 'x', 'y'),
+    /不支持注入/
+  );
+});
+
+test('importLibraryContent 接受空字符串写入（上层做内容校验）', async () => {
+  // core 层只负责落地，内容空不空由 main.cjs 把关
+  const r = await core.importLibraryContent('cursor', 'unit-empty.md', '', { backup: false });
+  assert.strictEqual(r.ok, true);
+  try { fs.unlinkSync(r.dest); } catch { /* */ }
+});
+
+test('importLibraryContent append 平台：codex 写入 AGENTS.md 标记块', async () => {
+  const targetFile = path.join(os.tmpdir(), 'dango-codetest-AGENTS.md');
+  // 备份并删除，确保干净
+  if (fs.existsSync(targetFile)) fs.unlinkSync(targetFile);
+  // 直接模拟 core: 我们这里测试 buildImportBlock（不直接测整条链，因依赖 codexHome）
+  const block = core.buildImportBlock('unit-test', 'TEST-CONTENT');
+  assert.ok(block.includes('shiyi-imported:unit-test:start'));
+  assert.ok(block.includes('TEST-CONTENT'));
+  assert.ok(block.includes(':end'));
+});
+

@@ -1,6 +1,6 @@
 {
   "name": "dango-desk",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "private": true,
   "description": "苏苏 AI超频 - 六大工具包统一管理与模型会话监控",
   "main": "electron/main.cjs",
@@ -20,7 +20,10 @@
     "smoke": "node tests/desktop-smoke.mjs",
     "test": "node --test tests/core.test.cjs",
     "patch:portable": "node scripts/apply-portable-patch.cjs",
-    "pack:portable": "npm run patch:portable && vite build && electron-builder --win portable --x64"
+    "pack:portable": "npm run patch:portable && vite build && electron-builder --win portable --x64",
+    "scrape:library": "node scripts/scrape-details.cjs",
+    "snapshot:library": "node scripts/build-library-snapshot.cjs",
+    "refresh:library": "npm run scrape:library && npm run snapshot:library"
   },
   "dependencies": {
     "http-proxy-agent": "^9.1.0",
@@ -57,6 +60,13 @@
       {
         "from": "packed-packs",
         "to": "packs",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "build/library",
+        "to": "library",
         "filter": [
           "**/*"
         ]

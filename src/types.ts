@@ -171,6 +171,19 @@ export interface ImportFileResult {
   label: string;
 }
 
+export interface LibraryItem {
+  id?: number | null;
+  name: string;
+  desc?: string;
+  category?: string;
+  category_label?: string;
+  source?: string;
+  success_rate?: number | null;
+  content_preview?: string;
+  content_length?: number;
+  content?: string;
+}
+
 /* ---------------- 深度分层验证 ---------------- */
 
 export interface VerifyLayer {
@@ -231,6 +244,12 @@ export interface DangoApi {
   importSingleFile: (p: string, platformId: string) => Promise<ImportFileResult>;
   clearImport: (platformId: string) => Promise<Hub>;
   listImports: () => Promise<Record<string, { kind: string; path: string; importedAt: string }>>;
+
+  /* ---------------- 内嵌词库 ---------------- */
+  libraryList: () => Promise<{ ok: boolean; prompts: LibraryItem[]; total?: number; dir?: string | null; source?: string }>;
+  libraryStats: () => Promise<{ ok: boolean; total: number; categories: Record<string, number>; rates: Record<string, number>; dir: string | null; source?: string; fetchedAt?: string | null }>;
+  libraryDetail: (index: number) => Promise<{ ok: boolean; detail?: LibraryItem & { content: string }; error?: string; source?: string }>;
+  libraryImport: (args: { platformId: string; index: number; name: string; content: string; backup?: boolean }) => Promise<ImportFileResult>;
 
   onLog: (cb: (l: LogLine) => void) => () => void;
   onProgress: (cb: (p: ProgressPayload) => void) => () => void;

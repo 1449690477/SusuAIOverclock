@@ -1601,6 +1601,142 @@ function buildImportBlock(name, content) {
   return `\n\n<!-- shiyi-imported:${safe}:start -->\n${content}\n<!-- shiyi-imported:${safe}:end -->\n`;
 }
 
+/* ===================================================================
+ *  词库（智汇AI 用户提示词库，内嵌 + 按需补全）
+ *  -------------------------------------------------------------------
+ *  数据源：
+ *    - bundled:   resources/library/library.json   （master 单文件，含 3134 条 metadata + 全文）
+ *    - detail:    resources/library/details/<i>.json（按 index 拆分的全文，可选）
+ *    - fallback:  resources/library/meta.json     （仅 metadata，供无全文快照兜底）
+ *  运行时：
+ *    - loadBuiltinLibrary()  读 bundled 列表（启动秒开）
+ *    - fetchBuiltinDetail(i) 联网或读缓存拿全文（注入时用）
+ *    - importLibraryContent() 复用 RULE_FILE_TARGETS 落到对应平台
+ * =================================================================== */
+
+const LIBRARY_BUNDLE_FILENAME = 'library.json';
+const LIBRARY_META_FILENAME = 'meta.json';
+const LIBRARY_DETAIL_PREFIX = 'details';
+const LIBRARY_REMOTE_LIST = 'https://api.12300.top/prompt-admin/api/preset-prompts';
+const LIBRARY_REMOTE_DETAIL = 'https://api.12300.top/prompt-admin/api/preset-prompt?id=';
+
+function builtinLibraryDir() {
+  const candidates = [];
+  if (process.resourcesPath) candidates.push(path.join(process.resourcesPath, 'library'));
+  candidates.push(path.join(__dirname, '..', 'build', 'library'));
+  for (const c of candidates) {
+    if (isDirSync(c)) return c;
+  }
+  return null;
+}
+
+/** 读内嵌词库列表（含 metadata + preview），启动时秒开 */
+function loadBuiltinLibrary() {
+  const dir = builtinLibraryDir();
+  if (!dir) return { ok: false, error: 'no bundled library', prompts: [], dir: null };
+  // 优先单文件（meta + 全文一体），其次 meta-only 兜底
+  const bundle = path.join(dir, LIBRARY_BUNDLE_FILENAME);
+  if (existsFileSync(bundle)) {
+    const data = JSON.parse(fs.readFileSync(bundle, 'utf8'));
+    return { ok: true, prompts: data.prompts || [], total: data.total || (data.prompts || []).length, fetchedAt: data.fetchedAt || null, dir, source: 'bundle' };
+  }
+  const meta = path.join(dir, LIBRARY_META_FILENAME);
+  if (existsFileSync(meta)) {
+    const data = JSON.parse(fs.readFileSync(meta, 'utf8'));
+    return { ok: true, prompts: data.prompts || [], total: data.total || (data.prompts || []).length, fetchedAt: data.fetchedAt || null, dir, source: 'meta' };
+  }
+  return { ok: false, error: 'no library snapshot in ' + dir, prompts: [], dir };
+}
+
+function existsFileSync(p) { try { return fs.statSync(p).isFile(); } catch { return false; } }
+
+/** 取某条目的全文。优先读 bundled detail 或缓存；都没有就回 preview，最后回退到联网 */
+function fetchBuiltinDetail(index) {
+  if (!Number.isFinite(index) || index < 0) return { ok: false, error: 'invalid index' };
+  const dir = builtinLibraryDir();
+  // 1) bundled detail
+  if (dir) {
+    const f = path.join(dir, LIBRARY_DETAIL_PREFIX, index + '.json');
+    if (existsFileSync(f)) {
+      try {
+        const d = JSON.parse(fs.readFileSync(f, 'utf8'));
+        return { ok: true, detail: d, source: 'bundled' };
+      } catch { /* fallthrough */ }
+    }
+    // 2) bundled single-file（含全文）
+    const bundle = path.join(dir, LIBRARY_BUNDLE_FILENAME);
+    if (existsFileSync(bundle)) {
+      try {
+        const arr = JSON.parse(fs.readFileSync(bundle, 'utf8'));
+        const d = (arr.prompts || [])[index];
+        if (d && d.content) return { ok: true, detail: d, source: 'bundled-bundle' };
+      } catch { /* fallthrough */ }
+    }
+  }
+  // 3) preview-only fallback：列表里有 preview，没有 content
+  const list = loadBuiltinLibrary();
+  const meta = (list.prompts || [])[index];
+  if (meta && meta.content) return { ok: true, detail: meta, source: 'meta-inline' };
+  if (meta && meta.content_preview) {
+    return { ok: true, detail: {
+      name: meta.name, desc: meta.desc, category: meta.category, category_label: meta.category_label,
+      source: meta.source, success_rate: meta.success_rate,
+      content: meta.content_preview + (meta.content_length > meta.content_preview.length ? '\n\n<!-- preview only, 联网后可注入完整内容 -->' : ''),
+    }, source: 'preview-only' };
+  }
+  return { ok: false, error: 'detail not found', index };
+}
+
+/** 在线拉一条全文（用户初次联网时补全缓存；当前不写盘，避免污染 userData） */
+async function fetchBuiltinDetailRemote(index) {
+  return new Promise((resolve) => {
+    const https = require('node:https');
+    const req = https.get(LIBRARY_REMOTE_DETAIL + index, { timeout: 15000 }, (res) => {
+      if (res.statusCode !== 200) { res.resume(); return resolve({ ok: false, error: 'http ' + res.statusCode }); }
+      const chunks = [];
+      res.on('data', (c) => chunks.push(c));
+      res.on('end', () => {
+        try {
+          const d = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+          resolve({ ok: true, detail: d, source: 'remote' });
+        } catch (e) { resolve({ ok: false, error: 'parse: ' + e.message }); }
+      });
+    });
+    req.on('error', (e) => resolve({ ok: false, error: e.message }));
+    req.on('timeout', () => { req.destroy(); resolve({ ok: false, error: 'timeout' }); });
+  });
+}
+
+/** 把词库条目注入到指定平台（复用 RULE_FILE_TARGETS + buildImportBlock） */
+async function importLibraryContent(platformId, name, content, opts = {}) {
+  const target = RULE_FILE_TARGETS[platformId];
+  if (!target) throw new Error(`${platformId} 不支持注入`);
+  const baseName = String(name || ('library-' + Date.now())).replace(/[\\/:*?"<>|]/g, '_');
+  const safeName = baseName.replace(/\.(md|mdc|txt)$/i, '');
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+
+  if (target.mode === 'copy') {
+    const destDir = target.dir();
+    await fsp.mkdir(destDir, { recursive: true });
+    const dest = path.join(destDir, target.fileName(baseName));
+    const body = target.wrap ? target.wrap(baseName, content) : content;
+    await fsp.writeFile(dest, body, 'utf8');
+    return { ok: true, mode: 'copy', dest, label: target.label };
+  }
+
+  // append：标记块方式追加
+  const targetFile = target.file();
+  await fsp.mkdir(path.dirname(targetFile), { recursive: true });
+  if (opts.backup !== false && fs.existsSync(targetFile)) {
+    const bakDir = path.join(BACKUP_DIR, 'library-append');
+    await fsp.mkdir(bakDir, { recursive: true });
+    try { await fsp.copyFile(targetFile, path.join(bakDir, `${platformId}-${stamp}-${path.basename(targetFile)}`)); } catch { /* best-effort */ }
+  }
+  const block = buildImportBlock(baseName, content);
+  await fsp.appendFile(targetFile, block, 'utf8');
+  return { ok: true, mode: 'append', dest: targetFile, label: target.label };
+}
+
 module.exports = {
   PACKS,
   PACK_IDS,
@@ -1646,5 +1782,10 @@ module.exports = {
   RULE_FILE_TARGETS,
   buildImportBlock,
   IMPORT_SCORE_THRESHOLD,
-  TEXT_EXTS
+  TEXT_EXTS,
+  loadBuiltinLibrary,
+  fetchBuiltinDetail,
+  fetchBuiltinDetailRemote,
+  importLibraryContent,
+  builtinLibraryDir
 };

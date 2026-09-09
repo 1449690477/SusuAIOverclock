@@ -11,6 +11,7 @@ import ProgressBar from './components/ProgressBar';
 import ConsolePanel from './components/ConsolePanel';
 import DeepVerifyModal from './components/DeepVerifyModal';
 import ImportModal from './components/ImportModal';
+import Library from './components/Library';
 import Toasts, { type ToastItem } from './components/Toasts';
 import type { Hub, Pack, ProgressPayload, PlatformInfo, BreakStatus, PlanInfo, LogLine, DeepVerifyResult } from './types';
 
@@ -438,6 +439,8 @@ export default function App() {
           ) : null}
 
           {view === 'activity' ? <ActivityView items={hub?.activity ?? []} /> : null}
+
+          {view === 'library' ? <Library packs={hub?.packs ?? []} toast={toast} /> : null}
 
           {view === 'settings' && hub ? (
             <SettingsView

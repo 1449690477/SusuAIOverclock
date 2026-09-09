@@ -1116,6 +1116,69 @@ function registerIpc() {
     const state = await loadState();
     return state.imported || {};
   });
+
+  // ---------- 词库（智汇AI 提示词库） ----------
+  ipcMain.handle('dango:libraryList', async () => {
+    return core.loadBuiltinLibrary();
+  });
+
+  ipcMain.handle('dango:libraryDetail', async (_e, index) => {
+    const local = core.fetchBuiltinDetail(Number(index));
+    if (local.ok && local.detail && local.detail.content && !local.detail.content.endsWith('preview-only 备注-->') && !local.detail.content.includes('<!-- preview only')) return local;
+    // preview-only 或失败：尝试联网补全
+    const remote = await core.fetchBuiltinDetailRemote(Number(index));
+    if (remote.ok) return remote;
+    return local; // 退而求其次返回 preview
+  });
+
+  ipcMain.handle('dango:libraryImport', async (_e, args) => {
+    const platformId = String(args?.platformId || '');
+    const index = Number(args?.index);
+    const name = String(args?.name || '');
+    const content = String(args?.content || '');
+    const backup = args?.backup !== false;
+    guard(platformId);
+    if (!content.trim()) throw new Error('词条内容为空');
+    const result = await core.importLibraryContent(platformId, name, content, { backup });
+    const state = await loadState();
+    state.imported = state.imported || {};
+    state.imported[platformId] = {
+      kind: 'library',
+      path: result.dest,
+      importedAt: new Date().toISOString(),
+      source: 'library:' + index,
+      title: name
+    };
+    pushActivity(state, 'import', `词库注入 → ${platformId}：${name}`);
+    await saveState(state);
+    return result;
+  });
+
+  ipcMain.handle('dango:libraryStats', async () => {
+    const lib = core.loadBuiltinLibrary();
+    const prompts = lib.prompts || [];
+    const cats = {};
+    const rates = { '>=90': 0, '80-89': 0, '70-79': 0, '<70': 0, 'n/a': 0 };
+    for (const p of prompts) {
+      const c = p.category_label || '通用安全';
+      cats[c] = (cats[c] || 0) + 1;
+      const r = Number(p.success_rate) || 0;
+      if (r >= 90) rates['>=90']++;
+      else if (r >= 80) rates['80-89']++;
+      else if (r >= 70) rates['70-79']++;
+      else if (r > 0) rates['<70']++;
+      else rates['n/a']++;
+    }
+    return {
+      ok: lib.ok,
+      total: prompts.length,
+      categories: cats,
+      rates,
+      dir: lib.dir,
+      source: lib.source,
+      fetchedAt: lib.fetchedAt
+    };
+  });
 }
 
 /* ------------------------------------------------------------------ 窗口 */

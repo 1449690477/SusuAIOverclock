@@ -41,6 +41,12 @@ contextBridge.exposeInMainWorld('dango', {
   clearImport: (platformId) => ipcRenderer.invoke('dango:clearImport', platformId),
   listImports: () => ipcRenderer.invoke('dango:listImports'),
 
+  // 词库（智汇AI 提示词库）
+  libraryList: () => ipcRenderer.invoke('dango:libraryList'),
+  libraryStats: () => ipcRenderer.invoke('dango:libraryStats'),
+  libraryDetail: (index) => ipcRenderer.invoke('dango:libraryDetail', index),
+  libraryImport: (args) => ipcRenderer.invoke('dango:libraryImport', args),
+
   onLog: (cb) => {
     const listener = (_e, payload) => cb(payload);
     ipcRenderer.on('dango:log', listener);

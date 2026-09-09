@@ -1,10 +1,11 @@
 import React from 'react';
-import { LayoutGrid, ScrollText, Settings as SettingsIcon } from 'lucide-react';
+import { LayoutGrid, ScrollText, Settings as SettingsIcon, Library as LibraryIcon } from 'lucide-react';
 
-export type View = 'toolbox' | 'activity' | 'settings';
+export type View = 'toolbox' | 'library' | 'activity' | 'settings';
 
 const ITEMS: { key: View; label: string; Icon: typeof LayoutGrid }[] = [
   { key: 'toolbox', label: '工具箱', Icon: LayoutGrid },
+  { key: 'library', label: '破甲词库', Icon: LibraryIcon },
   { key: 'activity', label: '活动记录', Icon: ScrollText },
   { key: 'settings', label: '设置', Icon: SettingsIcon }
 ];
