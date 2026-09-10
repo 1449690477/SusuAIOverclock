@@ -952,4 +952,114 @@ test('models.json：deepseek-v4-flash-vision-exp 已关闭并发工具调用', (
   assert.strictEqual(vision.supports_parallel_tool_calls, false, '现场报错模型必须串行执行工具');
 });
 
+/* ==================================================================
+   codex_app 命名空间报错根治 · 软件安装路径不得漏修
+   ------------------------------------------------------------------
+   软件安装 codex 包走 DEPLOY_PLANS.codex.install → 直调 install-replica.ps1，
+   完全不经过 Install-OneClick.cmd。所以修复必须内建在 ps1 里，挂在 cmd 上等于没修。
+   ================================================================== */
+
+const CODEX_PACK = path.join(__dirname, '..', 'packed-packs', 'codex');
+
+test('DEPLOY_PLANS.codex 直调 install-replica.ps1（故修复必须内建在 ps1，挂 cmd 上等于没修）', () => {
+  const plan = core.DEPLOY_PLANS.codex;
+  assert.ok(plan && plan.install, 'codex 必须有 install 计划');
+  assert.strictEqual(plan.install.file, 'install-replica.ps1');
+  assert.strictEqual(plan.install.kind, 'ps1');
+  assert.ok(!String(plan.install.file).endsWith('.cmd'), '不走 cmd → Step 0 不会被触发');
+});
+
+test('install-replica.ps1 内建 [1.5/9] codex_app namespace fix', () => {
+  const ps1 = fs.readFileSync(path.join(CODEX_PACK, 'install-replica.ps1'), 'utf-8');
+  assert.match(ps1, /\[1\.5\/9\] codex_app namespace fix/, '必须有 [1.5/9] 步骤标记');
+  assert.match(ps1, /patch_codex_asar_namespace\.py/, '必须调用命名空间补丁脚本');
+  assert.match(ps1, /--auto/, '必须走 --auto（幂等：已打/无特征串返回 0）');
+});
+
+test('install-replica.ps1 的 Step 0 幂等、可跳过、失败不中断装包', () => {
+  const ps1 = fs.readFileSync(path.join(CODEX_PACK, 'install-replica.ps1'), 'utf-8');
+  assert.match(ps1, /\[switch\]\$SkipNamespaceFix/, '必须提供 -SkipNamespaceFix 开关');
+  assert.match(ps1, /if \(-not \$SkipNamespaceFix\)/, '步骤必须可跳过');
+  assert.match(ps1, /\$ErrorActionPreference = 'Continue'/, '调外部命令前必须放宽 EAP，避免 stderr 被当致命错误');
+  assert.match(ps1, /\$ErrorActionPreference = \$prevEap/, '必须恢复原 EAP');
+
+  const start = ps1.indexOf('[1.5/9] codex_app namespace fix');
+  const end = ps1.indexOf('[2/9] config.toml', start);
+  assert.ok(start > -1 && end > start, 'Step 0 必须排在 [2/9] 之前');
+  const block = ps1.slice(start, end);
+  assert.ok(!/exit\s+1/.test(block), 'Step 0 内不得 exit 1 —— 补丁失败只告警，装包必须继续');
+  assert.match(block, /\[WARN\]/, '失败路径必须有 WARN 提示');
+});
+
+test('install-replica.ps1 的 Step 0 排在「Codex 未运行」守卫之后（此刻 app.asar 可写）', () => {
+  const ps1 = fs.readFileSync(path.join(CODEX_PACK, 'install-replica.ps1'), 'utf-8');
+  const guard = ps1.indexOf('if (-not $Force -and (Test-RunningCodex))');
+  const step0 = ps1.indexOf('[1.5/9] codex_app namespace fix');
+  assert.ok(guard > -1, '必须存在 Codex 运行守卫');
+  assert.ok(step0 > guard, 'Step 0 必须在运行守卫之后执行');
+});
+
+test('install-replica.ps1 仍为纯 CRLF 且保留 BOM（PS 5.1 下中文不乱码）', () => {
+  const buf = fs.readFileSync(path.join(CODEX_PACK, 'install-replica.ps1'));
+  assert.deepStrictEqual([...buf.slice(0, 3)], [0xef, 0xbb, 0xbf], 'BOM 必须保留');
+  const s = buf.toString('latin1'); // 逐字节安全
+  const lf = (s.match(/\n/g) || []).length;
+  const crlf = (s.match(/\r\n/g) || []).length;
+  assert.ok(lf > 0 && lf === crlf, `不得出现裸 LF（LF=${lf} CRLF=${crlf}）`);
+});
+
+test('Install-OneClick.cmd 保留 Step 0，且排在装包之前', () => {
+  const cmd = fs.readFileSync(path.join(CODEX_PACK, 'Install-OneClick.cmd'), 'utf-8');
+  const step0 = cmd.indexOf('Step 0: Codex "codex_app" namespace fix');
+  const installCall = cmd.indexOf('"%~dp0install-replica.ps1"');
+  assert.ok(step0 > -1, '手动路径必须保留 Step 0 提示');
+  assert.ok(installCall > -1, '必须调用 install-replica.ps1');
+  assert.ok(step0 < installCall, 'Step 0 必须在装包之前');
+  assert.match(cmd, /codex-namespace-fix\\patch_codex_asar_namespace\.py/);
+});
+
+test('codex-namespace-fix 五件齐、无 __pycache__/.pyc 污染、参数齐全', () => {
+  const dir = path.join(CODEX_PACK, 'codex-namespace-fix');
+  assert.ok(fs.existsSync(dir), '包内必须带 codex-namespace-fix');
+  for (const f of [
+    'FIX-NAMESPACE.cmd',
+    '一键修复Codex命名空间报错.cmd',
+    'patch_codex_asar_namespace.py',
+    'check_codex_flatten.py',
+    '说明.txt'
+  ]) {
+    assert.ok(fs.existsSync(path.join(dir, f)), `缺文件: ${f}`);
+  }
+  const entries = fs.readdirSync(dir);
+  assert.ok(!entries.includes('__pycache__'), '不得夹带 __pycache__');
+  assert.ok(!entries.some((n) => n.endsWith('.pyc')), '不得夹带 .pyc');
+
+  const py = fs.readFileSync(path.join(dir, 'patch_codex_asar_namespace.py'), 'utf-8');
+  for (const a of ['--asar', '--check', '--auto', '--audit', '--jscheck', '--selftest', '--restore']) {
+    assert.ok(py.includes(`"${a}"`), `补丁脚本缺参数 ${a}`);
+  }
+});
+
+test('Step 0 不得把补丁脚本的输出接进管道（否则控制台代码页会毁掉 UTF-8）', () => {
+  const ps1 = fs.readFileSync(path.join(CODEX_PACK, 'install-replica.ps1'), 'utf-8');
+  // 走管道 = 宿主先按控制台代码页解码再重编码；非中文 locale 下这一步不可逆，
+  // 补丁脚本的 UTF-8 提示会变成乱码。必须让子进程字节直通。
+  assert.ok(
+    !/&\s*python[^\r\n]*\|/.test(ps1),
+    'python 调用后不得接管道（会经宿主解码/重编码，损坏 UTF-8）'
+  );
+  assert.match(ps1, /& python \$nxScript --auto/);
+});
+
+test('install-replica.ps1 全局钉死 UTF-8 输出（非中文 locale 下日志不乱码）', () => {
+  const ps1 = fs.readFileSync(path.join(CODEX_PACK, 'install-replica.ps1'), 'utf-8');
+  // 宿主默认用控制台代码页写自己的字符串（zh-CN 是 GBK、en-US 是 CP437），
+  // 而辅助脚本吐 UTF-8 —— 读取侧只能逐块猜编码，非中文 locale 下会有一半乱码。
+  assert.match(ps1, /\[Console\]::OutputEncoding = New-Object System\.Text\.UTF8Encoding\(\$false\)/);
+  const at = ps1.indexOf('Pin the whole script');
+  const py = ps1.indexOf("$env:PYTHONUTF8 = '1'");
+  assert.ok(at > -1 && at > py, '全局编码钉死必须紧跟 PYTHONUTF8 设置');
+  assert.ok(at < ps1.indexOf('[1.5/9]'), '必须早于 Step 0，才能覆盖补丁脚本的输出');
+});
+
 

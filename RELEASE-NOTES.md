@@ -1,3 +1,100 @@
+# v1.3.5 — 内嵌 codex 包补上「命名空间报错」根治（软件安装路径不再漏修）
+
+## 先回答那个要命的问题
+
+> 「放到新软件里的 codex 包，别人用了之后是不是也会出现这个问题？」
+
+**会。而且是必然。**
+
+软件安装 codex 包时走的是：
+
+```js
+// electron/core.cjs
+codex: { install: { file: 'install-replica.ps1', kind: 'ps1', args: ['-NoOpenLinks'] }, ... }
+```
+
+**直调 `install-replica.ps1`，根本不经过 `Install-OneClick.cmd`。**
+
+而命名空间修复此前只挂在 cmd 的「Step 0」里 —— 于是：
+
+| 安装方式 | 是否有命名空间修复 |
+| --- | --- |
+| 手工双击 `Install-OneClick.cmd` | ✅ 有（Step 0 会问一次） |
+| 手工跑 `install-replica.ps1` | ❌ 没有 |
+| **从软件里点「安装」** | ❌ **没有** |
+
+装完一开 Codex，模型第一次调 `tool_search` 就撞：
+
+```
+Duplicate namespace name 'codex_app' in input[N].tools[M]. Namespace names must be unique.
+```
+
+换个法子压重名，立刻换第二条：
+
+```
+Invalid schema for function 'codex_app::automation_update':
+schema must be a JSON Schema of 'type: "object"', got 'type: null'.
+```
+
+这是**原版 Codex 的 bug**（补丁写盘 18:29:03，而 Codex 进程 18:14:40 就起来了；18:12 / 18:14 两次报错跑的是未打补丁的原版 asar）。但这个包会把模型推向「去找联网 / 浏览器工具」，等于**提前把潜伏 bug 引爆**，所以看起来像「用了这个包才出事」。
+
+本版把修复内建进 `install-replica.ps1` 本身，**软件路径与手工路径全部覆盖**。
+
+## 改了什么
+
+1. **`install-replica.ps1` 内置 Step 0** —— 新增 `[1.5/9] codex_app namespace fix`。
+   - 位置：预检通过后（**此处已确认 Codex 主程序未运行，app.asar 可写**）
+   - 动作：`python codex-namespace-fix\patch_codex_asar_namespace.py --auto`
+   - 幂等：已打 / 无特征串 → `SKIP`，不动一个字节
+   - 非致命：任何失败只打 `[WARN]`，**装包照常继续**
+   - 可跳过：`-SkipNamespaceFix`
+   - `-Force` 强装（Codex 在跑）时补丁失败也只告警
+
+2. **包内新增 `codex-namespace-fix\`**
+
+   | 文件 | 用途 |
+   | --- | --- |
+   | `FIX-NAMESPACE.cmd` | 一键修复（英文名，双击即用） |
+   | `一键修复Codex命名空间报错.cmd` | 同上（中文名） |
+   | `patch_codex_asar_namespace.py` | 主脚本，`--find/--check/--auto/--audit/--jscheck/--selftest/--restore` |
+   | `check_codex_flatten.py` | 复查（直接读 asar 判形态 + 全量 integrity） |
+   | `说明.txt` | 完整原理、证据链、边界、回滚方法 |
+
+3. **`Install-OneClick.cmd` 升到 v9** —— Step 0 在装包前先问一次；进程守卫换成 `check_codex.ps1`（忽略 `.codex\plugins\` 下不随桌面端退出的常驻子进程，避免「我明明退出了却一直说在运行」）。
+
+4. **`README-CN.txt` 写入 v9 说明段**（背景、原理、安全检查清单、重启要求）。
+
+## 顺手拦下一次回退事故
+
+新源包的 `materials/` 基线停在 **9/4–9/5**，比已发布修复更早。若无脑整体镜像，会把三处已发布修复冲回去：
+
+| 文件 | 会被冲回的坏状态 | 后果 |
+| --- | --- | --- |
+| `materials/hooks.json` | 重新出现 `PreToolUse` 事件 | 暴露工具事件注入面 |
+| `materials/hooks/ishii_auto_route.py` | 重新在 `PreToolUse`/`SubagentStart`/`PostToolUse` 注入 `additionalContext` | 撕开 `tool_calls` → `tool-output` 相邻性，DeepSeek 等严格 provider 回 **HTTP 400 `No tool output found for tool call`** |
+| `materials/models.json` | `supports_parallel_tool_calls` 回到 `true` | 并行工具调用重开，同源风险 |
+
+处置：镜像时**只取新增件**，这三个文件保留已发布版本，并逐项断言未回退：
+
+```
+hooks.json        PreToolUse 计数   = 0     ✓
+ishii_auto_route  v7.3 FIX 计数    = 3     ✓
+ishii_auto_route  TOOL_LOCK 注入   = 0     ✓
+models.json       与上一版逐文件一致       ✓
+```
+
+与备份 `diff -rq` 的最终结果只有三项：新增 `codex-namespace-fix/`、更新 `Install-OneClick.cmd`、更新 `README-CN.txt`。
+
+## 安全检查
+
+- `install-replica.ps1` / `check_codex.ps1` / `Uninstall.ps1` 三份 PS 脚本 **语法解析全 OK**
+- 注入后行尾仍是**全 CRLF**（CR=LF=950）、**BOM 保留**（`efbbbf`）
+- 补丁脚本**纯标准库**（`argparse/glob/hashlib/json/os/shutil/struct/subprocess/sys/tempfile/time`），不引入依赖
+- 补丁调用**不接管道**：接管道会被宿主按控制台代码页解码再重编码，在**非中文系统区域**下不可逆，中文提示会变乱码 → 现在让子进程字节直通（有单测钉死）
+- 补丁本身的安全边界（上一轮实测）：写入前自动备份 `app.asar.bak-codexapp-<时间戳>`、全量 integrity `5775/5775 MATCH`、被改 bundle `node --check` PASS、二次执行 SKIP、`--restore` 后逐字节一致、`NO-TARGET` 直接跳过、多份 Codex 并存时不自动挑（要求 `--asar` 显式指定，避免误改 antigravity / opencode / kimi / cursor）
+
+---
+
 # v1.3.4 — L3 进程层误报修复（「找不到 / 未安装」不再乱报）
 
 本版专修深度验证里最烦人的一层：**L3 进程层动不动就报「找不到 codex CLI」「客户端未安装」**，一条定位失败就把四层链路整个判死。
@@ -79,19 +176,20 @@
 
 | 文件 | 大小 | 说明 |
 | :-- | :-- | :-- |
-| `SusuAIOverclock-1.3.4-portable.exe` | ~140 MB | 免安装便携版，双击即用，**已内嵌七个工具包（Codex v8 Astra6 + Cursor v3.6 Grok 4.6 定向层 + 胖虎）+ L3 进程层多源探测修复** |
+| `SusuAIOverclock-1.3.5-portable.exe` | ~140 MB | 免安装便携版，双击即用，**已内嵌七个工具包（Codex v9 Astra6 + 命名空间修复 + Cursor v3.6 Grok 4.6 定向层 + 胖虎）+ L3 进程层多源探测修复** |
 
 > 首次运行 Windows 提示「已保护你的电脑」→ 点 **更多信息 → 仍要运行**。无代码签名证书所致，非软件问题。
 > 若杀软拦截，请将 exe 与包目录加入白名单。
+> **装 codex 包前请先完全退出 Codex（含托盘图标）**：安装脚本会在装包前对 Codex 的 `app.asar` 打 1 字节命名空间修复，Codex 在跑会锁文件。装包日志里能看到 `[1.5/9] codex_app namespace fix` 一行。
 
 **SHA-256 校验**（可选，验证下载完整）：
 
 ```
-626D682E93CEEE2D433C3C8B1393E58AB50D9670121F0DC1D5E7132181001261
+F800C8B606AD2F126922B9C04A40AAD16BF01A32F080D6298C11A6AAFF40AA16
 ```
 
 ```powershell
-Get-FileHash .\SusuAIOverclock-1.3.4-portable.exe -Algorithm SHA256
+Get-FileHash .\SusuAIOverclock-1.3.5-portable.exe -Algorithm SHA256
 ```
 
 > **从旧版升级**：直接换用新 exe 即可。若曾遇到「找不到 ffmpeg.dll」，v1.3.1 起会自动识破并重建半截缓存。Codex 包 v8 重装前会备份旧配置（`backups/eni-solo-*`），且**工具事件纯放行（DeepSeek 400 修复）已包含在包内**；Cursor 包 v3.6 重装会先备份旧规则文件再覆盖（.bak.<时间戳>），卸载可还原。Codex 两个分支互不干扰历史配置——石井分支重装仍走 `install-replica.ps1` 自愈（清 PreToolUse 遗留注册）；胖虎分支首次装会隔离当前 hooks.json（含时间戳备份），卸载即还原。原有 `config.toml` 账号配置一律保留。

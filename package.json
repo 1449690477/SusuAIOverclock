@@ -1,6 +1,6 @@
 {
   "name": "dango-desk",
-  "version": "1.3.4",
+  "version": "1.3.5",
   "private": true,
   "description": "苏苏 AI超频 - 六大工具包统一管理与模型会话监控",
   "main": "electron/main.cjs",

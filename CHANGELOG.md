@@ -4,6 +4,40 @@
 
 ---
 
+## [1.3.5] — 2026-09-10
+
+### 修复
+
+- **内嵌 codex 包：`codex_app` 命名空间报错根治，软件安装路径不再漏修**
+  - 现场：Codex 桌面端自带 bug —— 模型一旦调用 `tool_search`，整轮失败：
+    `Duplicate namespace name 'codex_app' in input[N].tools[M]`；
+    换法子压重名则撞上第二条 `Invalid schema for function 'codex_app::automation_update'`。
+  - **真正的漏点**：软件安装 codex 包走的是 `DEPLOY_PLANS.codex.install`
+    → **直调 `install-replica.ps1`**（`args: ['-NoOpenLinks']`），
+    而命名空间修复此前只挂在 `Install-OneClick.cmd` 的 Step 0 上。
+    结果是：手工跑 cmd 的有这道修复，**从软件里点「安装」的完全没有** —— 一用就撞 bug。
+  - 现在把修复**内建进 `install-replica.ps1`**（新增 `[1.5/9] codex_app namespace fix`）：
+    预检确认 Codex 主程序未运行（app.asar 可写）→ 对 `app.asar` 做 1 字节等长替换（flatten）。
+    **幂等**（已打 / 无特征串 → SKIP，不动一个字节）、**非致命**（任何失败只告警，装包照常）、
+    可 `-SkipNamespaceFix` 显式跳过。
+  - 包内新增 `codex-namespace-fix\`（5 件：`FIX-NAMESPACE.cmd`、`一键修复Codex命名空间报错.cmd`、
+    `patch_codex_asar_namespace.py`、`check_codex_flatten.py`、`说明.txt`），
+    主脚本支持 `--find/--check/--auto/--audit/--jscheck/--selftest/--restore` 全参数。
+  - `Install-OneClick.cmd` 同步升到 v9（Step 0 装包前先问一次 + `check_codex.ps1` 精确进程守卫），
+    `README-CN.txt` 写入 v9 说明段。
+  - 顺手加固：补丁脚本的调用**不接管道**。经管道会被宿主按控制台代码页解码再重编码，
+    在**非中文系统区域**下这一步不可逆 —— 补丁脚本的 UTF-8 中文提示会变成乱码。现在字节直通。
+
+- **回退检查：拒绝两处已发布修复被旧基线覆盖**
+  - 新源包 `materials/` 基线停在 9/4–9/5（早于已发布修复），整体镜像会冲掉三处修复：
+    ① `hooks.json` 重新出现 `PreToolUse` 事件；
+    ② `ishii_auto_route.py` 重新在工具事件（`PreToolUse`/`SubagentStart`/`PostToolUse`）上注入
+    `additionalContext` —— 会撕开 `tool_calls` → `tool-output` 相邻性，严格 Chat Completions
+    提供方（DeepSeek）回 HTTP 400 `No tool output found for tool call`；
+    ③ `models.json` 的 `supports_parallel_tool_calls` 回到 `true`。
+  - 处置：镜像源包时**只取新增件**，上述三个文件保留已发布版本，并逐项断言未回退
+    （`PreToolUse` 计数 = 0、`v7.3 FIX` ≥ 3、`TOOL_LOCK` 注入 = 0）。
+
 ## [1.3.4] — 2026-09-10
 
 ### 修复

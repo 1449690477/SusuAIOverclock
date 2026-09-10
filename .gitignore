@@ -21,6 +21,9 @@ packed-packs/
 npm-debug.log*
 vite.config.mjs.timestamp-*.mjs
 
+# 发布脚本（../_push-github.sh）的上传状态文件，自动写入，不入库
+.gh-upload.json
+
 # os
 .DS_Store
 Thumbs.db
