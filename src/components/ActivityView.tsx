@@ -17,7 +17,7 @@ export default function ActivityView({ items }: { items: ActivityItem[] }) {
       <h2>活动记录</h2>
       <p className="desc">
         只记录这个管理台自己做过的事：选目录、扫描、建立基线、检查变更、导出报告。
-        它不知道、也不记录那六个包在别的软件里的运行情况。
+        它不知道、也不记录那七个包在别的软件里的运行情况。
       </p>
       {items.length === 0 ? (
         <p className="desc" style={{ margin: 0 }}>

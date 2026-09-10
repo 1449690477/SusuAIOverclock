@@ -41,11 +41,20 @@ contextBridge.exposeInMainWorld('dango', {
   clearImport: (platformId) => ipcRenderer.invoke('dango:clearImport', platformId),
   listImports: () => ipcRenderer.invoke('dango:listImports'),
 
-  // 词库（智汇AI 提示词库）
+  // 词库 v2（智汇AI 提示词库）
   libraryList: () => ipcRenderer.invoke('dango:libraryList'),
   libraryStats: () => ipcRenderer.invoke('dango:libraryStats'),
   libraryDetail: (index) => ipcRenderer.invoke('dango:libraryDetail', index),
+  libraryTargets: () => ipcRenderer.invoke('dango:libraryTargets'),
   libraryImport: (args) => ipcRenderer.invoke('dango:libraryImport', args),
+  libraryImportBatch: (args) => ipcRenderer.invoke('dango:libraryImportBatch', args),
+  libraryInjections: (platformId) => ipcRenderer.invoke('dango:libraryInjections', platformId),
+  libraryInjectionsAll: () => ipcRenderer.invoke('dango:libraryInjectionsAll'),
+  libraryVerify: (args) => ipcRenderer.invoke('dango:libraryVerify', args),
+  libraryRemove: (args) => ipcRenderer.invoke('dango:libraryRemove', args),
+  libraryClearPlatform: (platformId) => ipcRenderer.invoke('dango:libraryClearPlatform', platformId),
+  libraryOpenDest: (args) => ipcRenderer.invoke('dango:libraryOpenDest', args),
+  copyText: (text) => ipcRenderer.invoke('dango:copyText', text),
 
   onLog: (cb) => {
     const listener = (_e, payload) => cb(payload);

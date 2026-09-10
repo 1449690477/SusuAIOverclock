@@ -129,7 +129,7 @@ export default function App() {
 
     // 逐个取平台真实图标（从 exe 提取）
     (async () => {
-      for (const id of ['codex', 'cursor', 'dsh', 'opencode', 'workbuddy', 'anti-gravity']) {
+      for (const id of ['codex', 'codex-panghu', 'cursor', 'dsh', 'opencode', 'workbuddy', 'anti-gravity']) {
         // eslint-disable-next-line no-await-in-loop
         const r = await api.getIcon(id).catch(() => null);
         if (!alive) return;
@@ -197,7 +197,8 @@ export default function App() {
         const r = await api.verifyDeep(id);
         setDeepResult(r);
         if (r.failAt) toast('info', `${pack?.name || id}：失败在 ${r.failAt}`);
-        else toast('ok', `${pack?.name || id}：四层全部通过`);
+        else if (r.passAt === 'L4') toast('ok', `${pack?.name || id}：四层全部通过`);
+        else toast('info', `${pack?.name || id}：三层通过，会话层未执行（无进程通道）`);
       } catch (e: unknown) {
         toast('err', e instanceof Error ? e.message : String(e));
         setDeepLoading(false);
@@ -263,7 +264,7 @@ export default function App() {
           <MascotCat size={38} />
           <div>
             <div className="titlebar-title">苏苏 AI超频 · Susu AI Overclock</div>
-            <div className="titlebar-sub">六大模型工作台 · 深度状态与会话监控</div>
+            <div className="titlebar-sub">七大模型工作台 · 深度状态与会话监控</div>
           </div>
         </div>
         <div className="titlebar-spacer" />
@@ -333,7 +334,7 @@ export default function App() {
                 <MascotCat size={110} />
                 <h3>先选一个根目录</h3>
                 <p>
-                  选择包含六个工具包文件夹的父目录（codex / cursor / dsh / opencode / workbuddy /
+                  选择包含七个工具包文件夹的父目录（codex / codex-panghu / cursor / dsh / opencode / workbuddy /
                   anti-gravity）。选好后可以一键安装、卸载、备份，并验证破甲是否生效。
                 </p>
                 <button className="btn btn-primary" onClick={() => run(() => api.chooseRoot())} disabled={busy}>
@@ -440,7 +441,7 @@ export default function App() {
 
           {view === 'activity' ? <ActivityView items={hub?.activity ?? []} /> : null}
 
-          {view === 'library' ? <Library packs={hub?.packs ?? []} toast={toast} /> : null}
+          {view === 'library' ? <Library toast={toast} /> : null}
 
           {view === 'settings' && hub ? (
             <SettingsView

@@ -30,8 +30,10 @@ const LAYER_META: Record<string, { title: string; desc: string; focus: string }>
 const VERIFY_PROMPT = '来杯冰美式，汇报你的身份与工作流，以 [石井 ROUTE] 开头并展开思考过程。';
 
 function LayerRow({ layer }: { layer: VerifyLayer }) {
-  const [expanded, setExpanded] = useState(!layer.ok || layer.layer === 'L4');
+  const [expanded, setExpanded] = useState(!layer.ok || layer.soft || layer.layer === 'L4');
   const meta = LAYER_META[layer.layer] || { title: layer.layer, desc: '', focus: '' };
+  const state = !layer.ok ? 'fail' : layer.soft ? 'soft' : 'ok';
+  const tone = !layer.ok ? 'fail' : layer.soft ? 'soft' : 'ok';
 
   // 将分号拼接的 detail 切分为独立小清单
   const detailItems = (layer.detail || '')
@@ -40,8 +42,8 @@ function LayerRow({ layer }: { layer: VerifyLayer }) {
     .filter(Boolean);
 
   return (
-    <div className={`v2-layer ${layer.ok ? 'ok' : 'fail'}`} data-testid={`v2-layer-${layer.layer}`}>
-      <span className={`v2-badge ${layer.ok ? 'ok' : 'fail'}`}>{layer.layer}</span>
+    <div className={`v2-layer ${state}`} data-testid={`v2-layer-${layer.layer}`}>
+      <span className={`v2-badge ${state}`}>{layer.layer}</span>
       <div className="v2-layer-body">
         <div
           className="v2-layer-head"
@@ -50,18 +52,31 @@ function LayerRow({ layer }: { layer: VerifyLayer }) {
         >
           <div>
             <b>{meta.title}</b>
-            <span style={{ marginLeft: 8, fontSize: 11.5, color: layer.ok ? '#2b8a3e' : '#c92a2a', fontWeight: 600 }}>
-              {layer.ok ? '✓ 检测通过' : '✗ 检查受阻'}
+            <span
+              style={{
+                marginLeft: 8,
+                fontSize: 11.5,
+                color: tone === 'ok' ? '#2b8a3e' : tone === 'soft' ? '#b26a00' : '#c92a2a',
+                fontWeight: 600
+              }}
+            >
+              {tone === 'ok' ? '✓ 检测通过' : tone === 'soft' ? '⚠ 降级通过' : '✗ 检查受阻'}
             </span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            {layer.ok ? <CheckCircle2 size={16} color="#2b8a3e" /> : <XCircle size={16} color="#e03131" />}
+            {tone === 'ok' ? (
+              <CheckCircle2 size={16} color="#2b8a3e" />
+            ) : tone === 'soft' ? (
+              <AlertTriangle size={16} color="#e8890c" />
+            ) : (
+              <XCircle size={16} color="#e03131" />
+            )}
             {expanded ? <ChevronUp size={14} color="var(--ink-faint)" /> : <ChevronDown size={14} color="var(--ink-faint)" />}
           </div>
         </div>
 
         <div className="v2-layer-desc">{meta.desc}</div>
-        <div className="v2-layer-label" style={{ color: layer.ok ? '#212529' : '#c92a2a' }}>
+        <div className="v2-layer-label" style={{ color: tone === 'ok' ? '#212529' : tone === 'soft' ? '#8a5300' : '#c92a2a' }}>
           {layer.label}
         </div>
 
@@ -203,6 +218,8 @@ export default function DeepVerifyModal({
 
   const failLayer = result?.failAt ? result.layers.find((l) => l.layer === result.failAt) : null;
   const allPass = result && !result.failAt && result.passAt === 'L4';
+  // 三层通过但会话层未执行（该平台没有进程通道，或进程未定位到可执行文件）
+  const partial = Boolean(result && !result.failAt && !allPass);
 
   const copyText = (text: string, setCopied: (v: boolean) => void) => {
     navigator.clipboard.writeText(text);
@@ -247,7 +264,7 @@ export default function DeepVerifyModal({
           ) : result ? (
             <>
               {/* 核心结论横幅 */}
-              <div className={`v2-verdict ${allPass ? 'pass' : 'fail'}`} style={{ marginBottom: 14 }}>
+              <div className={`v2-verdict ${allPass ? 'pass' : failLayer ? 'fail' : partial ? 'soft' : 'fail'}`} style={{ marginBottom: 14 }}>
                 {allPass ? (
                   <>
                     <ShieldCheck size={18} />
@@ -265,6 +282,16 @@ export default function DeepVerifyModal({
                       <b>受阻于 {failLayer.layer}（{(LAYER_META[failLayer.layer] || {}).title}）：{failLayer.label}</b>
                       <div style={{ fontSize: 11.5, fontWeight: 400, marginTop: 1 }}>
                         在此层受阻，后续层级已阻断或未完全生效，请参考下方靶向建议。
+                      </div>
+                    </div>
+                  </>
+                ) : partial ? (
+                  <>
+                    <AlertTriangle size={18} />
+                    <div>
+                      <b>文件 / 配置 / 进程三层已通过 · 会话层未执行</b>
+                      <div style={{ fontSize: 11.5, fontWeight: 400, marginTop: 1 }}>
+                        该平台当前没有可用的进程通道，未做实时问答验证；这不代表破甲失败，可在客户端里手工复测。
                       </div>
                     </div>
                   </>
@@ -352,6 +379,19 @@ export default function DeepVerifyModal({
                 </div>
               )}
 
+              {partial && (
+                <div className="warn-box" style={{ marginTop: 14, background: '#fffaf0', borderColor: '#f2d9a8' }}>
+                  <b style={{ color: '#9a5b00', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <AlertTriangle size={14} /> 关于本平台的会话层说明：
+                  </b>
+                  <div style={{ marginTop: 4, fontSize: 12, lineHeight: 1.6 }}>
+                    {pack.id === 'dsh'
+                      ? 'DSH 没有独立可执行文件（走 npx 临时缓存），因此不提供进程/会话自动化探测。文件层与配置层已如实校验，破甲是否生效可在 DSH 里手工发一次握手口令确认。'
+                      : '进程未定位到可执行文件，但已按配置目录判定该客户端已安装，因此未做自动会话验证。可手工打开客户端发一次握手口令确认。'}
+                  </div>
+                </div>
+              )}
+
               {/* 靶向排查与调优建议 */}
               {failLayer && (
                 <div className="warn-box" style={{ marginTop: 14 }}>
@@ -371,7 +411,7 @@ export default function DeepVerifyModal({
                     )}
                     {failLayer.layer === 'L3' && (
                       <span>
-                        目标软件/CLI 进程拉起失败。请确认目标软件已正确安装、未被杀软隔离，且路径与端口没有被其他多开实例占用。
+                        目标软件/CLI 进程未定位到。已并联查过标准安装位、Program Files、各盘符常见目录、注册表卸载项与当前运行进程；若仍判定未安装，请确认该软件确实装在本机（而非网页版/远程），并检查杀软是否把安装目录隔离。
                       </span>
                     )}
                     {failLayer.layer === 'L4' && (

@@ -1,4 +1,4 @@
-export type Accent = 'sakura' | 'matcha' | 'yuzu' | 'kuromi' | 'soda' | 'grape';
+export type Accent = 'sakura' | 'matcha' | 'yuzu' | 'kuromi' | 'soda' | 'grape' | 'tiger';
 
 export type BaselineResult = 'untracked' | 'recorded' | 'unchanged' | 'changed';
 
@@ -171,17 +171,128 @@ export interface ImportFileResult {
   label: string;
 }
 
+/* ---------------- 词库 v2 ---------------- */
+
+/** 列表项：只有 metadata + 预览，全文走 libraryDetail 按需取 */
 export interface LibraryItem {
+  index: number;
   id?: number | null;
   name: string;
   desc?: string;
   category?: string;
   category_label?: string;
   source?: string;
-  success_rate?: number | null;
-  content_preview?: string;
+  success_rate?: number;
   content_length?: number;
+  preview?: string;
+  has_full?: boolean;
+  /** 仅详情返回时携带 */
   content?: string;
+}
+
+export interface LibraryListResult {
+  ok: boolean;
+  error?: string | null;
+  total: number;
+  source: 'bundle' | 'meta' | 'none';
+  fullText: boolean;
+  fetchedAt: string | null;
+  dir: string | null;
+  prompts: LibraryItem[];
+}
+
+export interface LibraryStatsResult {
+  ok: boolean;
+  total: number;
+  categories: Record<string, number>;
+  sources: Record<string, number>;
+  rates: { r90: number; r80: number; r70: number; rLow: number; rNone: number };
+  fullCount: number;
+  previewOnly: number;
+  totalChars: number;
+  dir: string | null;
+  source: string;
+  fetchedAt: string | null;
+}
+
+export interface LibraryTargetInfo {
+  id: string;
+  mode: 'copy' | 'append';
+  label: string;
+  path: string;
+  exists: boolean;
+  injectedKeys: string[];
+  injectedCount: number;
+  size: number;
+  lines?: number;
+  installed?: boolean;
+  breakActive?: boolean | null;
+  error?: string;
+}
+
+export interface InjectionVerify {
+  exists: boolean;
+  hashMatch: boolean | null;
+  verdict: 'active' | 'drifted' | 'missing';
+  breakActive: boolean | null;
+}
+
+export interface InjectionItem {
+  key: string;
+  title: string;
+  dest: string;
+  bytes: number;
+  chars?: number;
+  updatedAt?: string;
+  injectedAt?: string | null;
+  fromLibrary: boolean;
+  index?: number;
+  verify?: InjectionVerify;
+}
+
+export interface InjectionsResult {
+  ok: boolean;
+  platformId?: string;
+  mode?: 'copy' | 'append';
+  path?: string;
+  exists?: boolean;
+  items: InjectionItem[];
+  breakActive?: boolean | null;
+  error?: string;
+}
+
+export interface LibraryInjectResult {
+  ok: boolean;
+  mode: 'copy' | 'append';
+  dest: string;
+  key: string;
+  label: string;
+  bytes: number;
+  contentHash?: string;
+  displaced?: string[];
+  verify?: InjectionVerify & { actualHash?: string; bodyChars?: number };
+}
+
+export interface LibraryBatchResult {
+  ok: boolean;
+  platformId: string;
+  results: { ok: boolean; index: number; name: string; key?: string; dest?: string; mode?: string; verify?: string; error?: string }[];
+  okCount: number;
+  failCount: number;
+}
+
+export interface LibraryHistoryItem {
+  key: string;
+  platformId: string;
+  index: number;
+  name: string;
+  dest: string;
+  mode: 'copy' | 'append';
+  bytes: number;
+  contentHash?: string;
+  injectMode?: 'replace' | 'append';
+  displaced?: string[];
+  at: string;
 }
 
 /* ---------------- 深度分层验证 ---------------- */
@@ -190,6 +301,8 @@ export interface VerifyLayer {
   layer: 'L1' | 'L2' | 'L3' | 'L4';
   name: string;
   ok: boolean;
+  /** 降级通过：未拿到进程通道，但已有足够证据判定就绪（不算失败） */
+  soft?: boolean;
   label: string;
   detail: string;
 }
@@ -245,11 +358,20 @@ export interface DangoApi {
   clearImport: (platformId: string) => Promise<Hub>;
   listImports: () => Promise<Record<string, { kind: string; path: string; importedAt: string }>>;
 
-  /* ---------------- 内嵌词库 ---------------- */
-  libraryList: () => Promise<{ ok: boolean; prompts: LibraryItem[]; total?: number; dir?: string | null; source?: string }>;
-  libraryStats: () => Promise<{ ok: boolean; total: number; categories: Record<string, number>; rates: Record<string, number>; dir: string | null; source?: string; fetchedAt?: string | null }>;
-  libraryDetail: (index: number) => Promise<{ ok: boolean; detail?: LibraryItem & { content: string }; error?: string; source?: string }>;
-  libraryImport: (args: { platformId: string; index: number; name: string; content: string; backup?: boolean }) => Promise<ImportFileResult>;
+  /* ---------------- 内嵌词库 v2 ---------------- */
+  libraryList: () => Promise<LibraryListResult>;
+  libraryStats: () => Promise<LibraryStatsResult>;
+  libraryDetail: (index: number) => Promise<{ ok: boolean; detail?: LibraryItem; error?: string; source?: string; partial?: boolean; remoteError?: string }>;
+  libraryTargets: () => Promise<{ ok: boolean; targets: LibraryTargetInfo[] }>;
+  libraryImport: (args: { platformId: string; index: number; name: string; content?: string; mode?: 'replace' | 'append' }) => Promise<LibraryInjectResult>;
+  libraryImportBatch: (args: { platformId: string; entries: { index: number; name: string; content?: string }[]; mode?: 'replace' | 'append' }) => Promise<LibraryBatchResult>;
+  libraryInjections: (platformId: string) => Promise<InjectionsResult>;
+  libraryInjectionsAll: () => Promise<{ ok: boolean; platforms: Record<string, InjectionsResult>; history: LibraryHistoryItem[] }>;
+  libraryVerify: (args: { platformId: string; key: string }) => Promise<InjectionVerify & { ok: boolean; platformId?: string; key?: string; actualHash?: string; bodyChars?: number; error?: string }>;
+  libraryRemove: (args: { platformId: string; key: string }) => Promise<{ ok: boolean; mode?: string; dest?: string; removed?: number; error?: string }>;
+  libraryClearPlatform: (platformId: string) => Promise<{ ok: boolean; removed?: number; errors?: string[]; error?: string }>;
+  libraryOpenDest: (args: { platformId: string }) => Promise<{ ok: boolean; path?: string; error?: string }>;
+  copyText: (text: string) => Promise<{ ok: boolean; error?: string }>;
 
   onLog: (cb: (l: LogLine) => void) => () => void;
   onProgress: (cb: (p: ProgressPayload) => void) => () => void;

@@ -164,8 +164,15 @@ function spawnOnce(cmd, args, opts = {}) {
     let stdout = '';
     let stderr = '';
     let child;
+    // .cmd/.bat 不是可执行映像，node 直接 spawn 会 EINVAL，必须过 cmd.exe
+    let file = cmd;
+    let argv = args;
+    if (/\.(cmd|bat)$/i.test(String(cmd))) {
+      file = process.env.ComSpec || 'cmd.exe';
+      argv = ['/d', '/s', '/c', cmd, ...args];
+    }
     try {
-      child = spawn(cmd, args, { cwd: opts.cwd, env, windowsHide: true });
+      child = spawn(file, argv, { cwd: opts.cwd, env, windowsHide: true });
     } catch (e) {
       resolve({ code: -1, stdout, stderr: String(e.message || e) });
       return;
@@ -309,33 +316,29 @@ async function runDeepVerify(id) {
   }
   result.passAt = 'L2';
 
-  // L3 进程层
+  // L3 进程层 —— 走 core.probeRuntime 的多源探测，不再单靠一条硬编码路径
   const chan = core.L4_CHANNELS[id] || { mode: 'gui' };
-  let l3ok = false;
-  let l3label = '';
-  let l3detail = '';
-  if (chan.mode === 'cli') {
-    const exe = core.findCodexCli();
-    if (exe) {
-      // eslint-disable-next-line no-await-in-loop
-      const r = await spawnOnce(exe, ['--version'], { timeout: 20000 });
-      l3ok = r.code === 0;
-      l3label = l3ok ? `CLI 可启动（${(r.stdout || '').trim().split('\n')[0] || 'codex'}）` : 'CLI 启动失败';
-      l3detail = (r.stdout + '\n' + r.stderr).trim().slice(0, 300);
-    } else {
-      l3label = '找不到 codex CLI';
-    }
-  } else if (chan.mode === 'gui') {
-    const exe = core.findGuiExe(id);
-    l3ok = Boolean(exe);
-    l3label = exe ? `客户端已安装（${path.basename(exe)}）` : '客户端未安装';
-    l3detail = exe || '';
-  } else {
-    l3ok = false;
-    l3label = chan.note || '无可用通道';
-    l3detail = '';
+  const rt = core.probeRuntime(id);
+  let l3ok = rt.ok;
+  let l3label = rt.label;
+  let l3detail = rt.detail || '';
+  // CLI 通道：拿到 exe 才真起一次；探测期已回退到 GUI 的不在此重复 spawn
+  if (rt.ok && rt.mode === 'cli' && rt.exe && !rt.soft) {
+    const r = await spawnOnce(rt.exe, ['--version'], { timeout: 20000 });
+    l3ok = r.code === 0;
+    l3label = l3ok ? `CLI 可启动（${(r.stdout || '').trim().split('\n')[0] || 'codex'}）` : 'CLI 启动失败';
+    l3detail = (r.stdout + '\n' + r.stderr).trim().slice(0, 300) || rt.detail || '';
+  } else if (rt.ok && !rt.exe) {
+    l3detail = [rt.label, rt.detail].filter(Boolean).join('；');
   }
-  layers.push({ layer: 'L3', name: '进程层', ok: l3ok, label: l3label, detail: l3detail });
+  layers.push({
+    layer: 'L3',
+    name: '进程层',
+    ok: l3ok,
+    soft: Boolean(l3ok && rt.soft),
+    label: l3label,
+    detail: l3detail
+  });
   if (!l3ok) {
     result.failAt = 'L3';
     result.layers = layers;
@@ -343,9 +346,28 @@ async function runDeepVerify(id) {
   }
   result.passAt = 'L3';
 
-  // L4 会话层
-  if (chan.mode === 'cli') {
-    const exe = core.findCodexCli();
+  // L4 会话层 —— 依据 L3 实际拿到的通道决定
+  const l4mode = rt.soft ? (rt.exe ? 'gui' : 'skip') : rt.mode;
+  if (l4mode === 'skip') {
+    layers.push({
+      layer: 'L4',
+      name: '会话层',
+      ok: true,
+      soft: true,
+      label: '已跳过（该平台无进程通道，仅完成文件/配置两层验证）',
+      detail: rt.detail || ''
+    });
+    result.layers = layers;
+    return result;
+  }
+  if (l4mode === 'cli') {
+    const exe = rt.exe || core.findCodexCli();
+    if (!exe) {
+      layers.push({ layer: 'L4', name: '会话层', ok: false, label: 'CLI 通道不可用', detail: '' });
+      result.failAt = 'L4';
+      result.layers = layers;
+      return result;
+    }
     // eslint-disable-next-line no-await-in-loop
     const r = await spawnOnce(exe, ['exec', '-c', 'approval_policy=never', '-c', 'sandbox_mode=read-only', core.VERIFY_PROMPT], {
       timeout: 120000
@@ -382,7 +404,7 @@ async function runDeepVerify(id) {
     result.layers = layers;
     return result;
   }
-  if (chan.mode === 'gui') {
+  if (l4mode === 'gui') {
     // eslint-disable-next-line no-await-in-loop
     const g = await guiSessionProbe(id);
     result.analysis = g.analysis || null;
@@ -393,8 +415,7 @@ async function runDeepVerify(id) {
     result.layers = layers;
     return result;
   }
-  layers.push({ layer: 'L4', name: '会话层', ok: false, label: chan.note || '无通道', detail: '' });
-  result.failAt = 'L4';
+  layers.push({ layer: 'L4', name: '会话层', ok: true, soft: true, label: chan.note || '无可用通道（已跳过）', detail: '' });
   result.layers = layers;
   return result;
 }
@@ -578,7 +599,7 @@ async function scanPack(state, def) {
 
 async function buildHub() {
   const state = await loadState();
-  // 六个包互不共享可变扫描状态。并行扫描避免启动时把六段目录 I/O
+  // 七个包互不共享可变扫描状态。并行扫描避免启动时把七段目录 I/O
   // 串成一条长链，尤其是首次从 resources/packs 读取时收益明显。
   const packs = await Promise.all(core.PACKS.map((def) => scanPack(state, def)));
   const embeddedRoot = core.embeddedPacksRoot();
@@ -626,7 +647,7 @@ function registerIpc() {
 
   ipcMain.handle('dango:chooseRoot', async () => {
     const res = await dialog.showOpenDialog(win, {
-      title: '选择包含六个工具包的根目录',
+      title: '选择包含七个工具包的根目录',
       properties: ['openDirectory']
     });
     if (res.canceled || !res.filePaths.length) return buildHub();
@@ -1117,67 +1138,249 @@ function registerIpc() {
     return state.imported || {};
   });
 
-  // ---------- 词库（智汇AI 提示词库） ----------
+  // ---------- 词库 v2（智汇AI 提示词库） ----------
+  //
+  // 注入历史独立存放在 userData/library-injections.json。
+  // 绝不写 state.imported —— 那是第三方破甲包的槽位，
+  // 混用会把用户导入的包顶掉（v1.2.1 的 bug）。
+
+  const LIB_HISTORY_FILE = path.join(USER_DIR, 'library-injections.json');
+
+  async function loadLibHistory() {
+    try {
+      const j = JSON.parse(await fsp.readFile(LIB_HISTORY_FILE, 'utf8'));
+      return Array.isArray(j.items) ? j : { items: [] };
+    } catch {
+      return { items: [] };
+    }
+  }
+
+  async function saveLibHistory(h) {
+    await fsp.mkdir(USER_DIR, { recursive: true });
+    h.items = (h.items || []).slice(0, 500);
+    await fsp.writeFile(LIB_HISTORY_FILE, JSON.stringify(h, null, 2), 'utf8');
+  }
+
+  /** 列表：只传 metadata + preview（~1MB），全文按需再取 */
   ipcMain.handle('dango:libraryList', async () => {
-    return core.loadBuiltinLibrary();
-  });
-
-  ipcMain.handle('dango:libraryDetail', async (_e, index) => {
-    const local = core.fetchBuiltinDetail(Number(index));
-    if (local.ok && local.detail && local.detail.content && !local.detail.content.endsWith('preview-only 备注-->') && !local.detail.content.includes('<!-- preview only')) return local;
-    // preview-only 或失败：尝试联网补全
-    const remote = await core.fetchBuiltinDetailRemote(Number(index));
-    if (remote.ok) return remote;
-    return local; // 退而求其次返回 preview
-  });
-
-  ipcMain.handle('dango:libraryImport', async (_e, args) => {
-    const platformId = String(args?.platformId || '');
-    const index = Number(args?.index);
-    const name = String(args?.name || '');
-    const content = String(args?.content || '');
-    const backup = args?.backup !== false;
-    guard(platformId);
-    if (!content.trim()) throw new Error('词条内容为空');
-    const result = await core.importLibraryContent(platformId, name, content, { backup });
-    const state = await loadState();
-    state.imported = state.imported || {};
-    state.imported[platformId] = {
-      kind: 'library',
-      path: result.dest,
-      importedAt: new Date().toISOString(),
-      source: 'library:' + index,
-      title: name
-    };
-    pushActivity(state, 'import', `词库注入 → ${platformId}：${name}`);
-    await saveState(state);
-    return result;
+    return core.libraryMeta();
   });
 
   ipcMain.handle('dango:libraryStats', async () => {
-    const lib = core.loadBuiltinLibrary();
-    const prompts = lib.prompts || [];
-    const cats = {};
-    const rates = { '>=90': 0, '80-89': 0, '70-79': 0, '<70': 0, 'n/a': 0 };
-    for (const p of prompts) {
-      const c = p.category_label || '通用安全';
-      cats[c] = (cats[c] || 0) + 1;
-      const r = Number(p.success_rate) || 0;
-      if (r >= 90) rates['>=90']++;
-      else if (r >= 80) rates['80-89']++;
-      else if (r >= 70) rates['70-79']++;
-      else if (r > 0) rates['<70']++;
-      else rates['n/a']++;
+    return core.libraryStats();
+  });
+
+  /** 单条全文：本地优先，preview-only 才联网补全 */
+  ipcMain.handle('dango:libraryDetail', async (_e, index) => {
+    return core.resolveLibraryContent(Number(index));
+  });
+
+  /** 平台注入点预检：写到哪、文件现状、已有多少注入块 */
+  ipcMain.handle('dango:libraryTargets', async () => {
+    return { ok: true, targets: core.libraryPlatformTargets() };
+  });
+
+  /** 注入（单条）。写盘 + 记历史 + 活动日志 */
+  ipcMain.handle('dango:libraryImport', async (_e, args) => {
+    const platformId = String(args?.platformId || '');
+    guard(platformId);
+    const index = Number(args?.index);
+    const name = String(args?.name || '');
+    let content = typeof args?.content === 'string' ? args.content : '';
+
+    // UI 只传 index 也行：主进程自己解析全文（本地 → 联网兜底）
+    if (!content.trim() && Number.isInteger(index) && index >= 0) {
+      const r = await core.resolveLibraryContent(index);
+      if (!r.ok || !r.detail?.content) throw new Error(r.error || '词条内容为空且联网补全失败');
+      content = r.detail.content;
     }
-    return {
-      ok: lib.ok,
-      total: prompts.length,
-      categories: cats,
-      rates,
-      dir: lib.dir,
-      source: lib.source,
-      fetchedAt: lib.fetchedAt
-    };
+    if (!content.trim()) throw new Error('词条内容为空');
+
+    const result = await core.importLibraryContent(platformId, name, content, {
+      index,
+      mode: args?.mode === 'replace' ? 'replace' : 'append',
+      backupDir: path.join(BACKUP_DIR, 'library-append')
+    });
+
+    // 写后回读复核：确认标记块真的落盘、内容哈希一致
+    const verify = core.verifyLibraryInjection(platformId, result.key, result.contentHash);
+
+    const state = await loadState();
+    pushActivity(state, 'library', `词库注入 → ${platformId}：${name || '(未命名)'}${verify.verdict === 'active' ? '（已复核生效）' : `（复核：${verify.verdict}）`}`);
+    await saveState(state);
+
+    const h = await loadLibHistory();
+    h.items.unshift({
+      key: result.key,
+      platformId,
+      index: Number.isInteger(index) ? index : -1,
+      name,
+      dest: result.dest,
+      mode: result.mode,
+      bytes: result.bytes || content.length,
+      contentHash: result.contentHash,
+      injectMode: args?.mode === 'replace' ? 'replace' : 'append',
+      displaced: result.displaced || [],
+      at: new Date().toISOString()
+    });
+    await saveLibHistory(h);
+
+    return { ...result, verify };
+  });
+
+  /** 批量注入：逐条执行，返回每条结果，不因单条失败中断 */
+  ipcMain.handle('dango:libraryImportBatch', async (_e, args) => {
+    const platformId = String(args?.platformId || '');
+    guard(platformId);
+    const entries = Array.isArray(args?.entries) ? args.entries : [];
+    if (!entries.length) throw new Error('没有选中词条');
+    if (entries.length > 50) throw new Error('一次最多批量注入 50 条，避免规则文件过载');
+
+    const results = [];
+    const h = await loadLibHistory();
+    const injectMode = args?.mode === 'replace' ? 'replace' : 'append';
+    for (const it of entries) {
+      const index = Number(it?.index);
+      const name = String(it?.name || '');
+      try {
+        let content = typeof it?.content === 'string' ? it.content : '';
+        if (!content.trim() && Number.isInteger(index) && index >= 0) {
+          const r = await core.resolveLibraryContent(index);
+          if (!r.ok || !r.detail?.content) throw new Error(r.error || '内容为空且联网补全失败');
+          content = r.detail.content;
+        }
+        if (!content.trim()) throw new Error('词条内容为空');
+        const res = await core.importLibraryContent(platformId, name, content, {
+          index,
+          // 批量默认 append：用户显式选了多条，意图就是叠加；replace 会互相顶掉
+          mode: injectMode,
+          backupDir: path.join(BACKUP_DIR, 'library-append')
+        });
+        const verify = core.verifyLibraryInjection(platformId, res.key, res.contentHash);
+        results.push({ ok: true, index, name, key: res.key, dest: res.dest, mode: res.mode, verify: verify.verdict });
+        h.items.unshift({
+          key: res.key, platformId, index: Number.isInteger(index) ? index : -1,
+          name, dest: res.dest, mode: res.mode, bytes: res.bytes || content.length,
+          contentHash: res.contentHash, injectMode, displaced: res.displaced || [], at: new Date().toISOString()
+        });
+      } catch (e) {
+        results.push({ ok: false, index, name, error: e instanceof Error ? e.message : String(e) });
+      }
+    }
+    await saveLibHistory(h);
+    const state = await loadState();
+    const okN = results.filter((r) => r.ok).length;
+    pushActivity(state, 'library', `词库批量注入 → ${platformId}：${okN}/${results.length} 成功`);
+    await saveState(state);
+    return { ok: true, platformId, results, okCount: okN, failCount: results.length - okN };
+  });
+
+  /** 某平台当前磁盘上真实生效的注入块（带注入时哈希复核 + 破甲层状态） */
+  ipcMain.handle('dango:libraryInjections', async (_e, platformId) => {
+    guard(platformId);
+    const h = await loadLibHistory();
+    return core.verifyLibraryPlatform(String(platformId), h.items || []);
+  });
+
+  /** 全部平台的注入概览（管理页用，含复核结果） */
+  ipcMain.handle('dango:libraryInjectionsAll', async () => {
+    const h = await loadLibHistory();
+    const out = {};
+    for (const id of Object.keys(core.RULE_FILE_TARGETS)) {
+      out[id] = core.verifyLibraryPlatform(id, h.items || []);
+    }
+    return { ok: true, platforms: out, history: h.items };
+  });
+
+  /** 单块复核：注入后 / 客户端更新后随时验证某条注入是否仍然生效 */
+  ipcMain.handle('dango:libraryVerify', async (_e, args) => {
+    const platformId = String(args?.platformId || '');
+    const key = String(args?.key || '');
+    guard(platformId);
+    const h = await loadLibHistory();
+    const hist = (h.items || []).find((x) => x.platformId === platformId && x.key === key);
+    return core.verifyLibraryInjection(platformId, key, hist ? hist.contentHash : undefined);
+  });
+
+  /** 卸载单个注入块（按 key 精准摘除，其余内容不动） */
+  ipcMain.handle('dango:libraryRemove', async (_e, args) => {
+    const platformId = String(args?.platformId || '');
+    const key = String(args?.key || '');
+    guard(platformId);
+    if (!key.trim()) throw new Error('key 为空');
+    const r = await core.removeLibraryInjection(platformId, key, {
+      backupDir: path.join(BACKUP_DIR, 'library-remove')
+    });
+    if (r.ok) {
+      const state = await loadState();
+      pushActivity(state, 'library', `词库卸载 ← ${platformId}：${key}`);
+      await saveState(state);
+      const h = await loadLibHistory();
+      h.items = (h.items || []).filter((x) => !(x.platformId === platformId && x.key === key));
+      await saveLibHistory(h);
+    }
+    return r;
+  });
+
+  /** 一键清空某平台的所有词库注入（只动 lib* 标记块，第三方导入的块不碰） */
+  ipcMain.handle('dango:libraryClearPlatform', async (_e, platformId) => {
+    guard(platformId);
+    const scan = core.listLibraryInjections(String(platformId));
+    if (!scan.ok) return scan;
+    let removed = 0;
+    const errors = [];
+    for (const it of scan.items || []) {
+      if (!it.fromLibrary) continue; // 只清词库注入的，用户自己导入的不动
+      try {
+        const r = await core.removeLibraryInjection(String(platformId), it.key, {
+          backupDir: path.join(BACKUP_DIR, 'library-remove')
+        });
+        if (r.ok) removed += 1;
+        else errors.push(`${it.key}: ${r.error}`);
+      } catch (e) {
+        errors.push(`${it.key}: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+    const state = await loadState();
+    pushActivity(state, 'library', `清空词库注入 ← ${platformId}：移除 ${removed} 块`);
+    await saveState(state);
+    const h = await loadLibHistory();
+    h.items = (h.items || []).filter((x) => x.platformId !== String(platformId));
+    await saveLibHistory(h);
+    return { ok: true, removed, errors };
+  });
+
+  /** 打开注入目标文件所在目录（资源管理器） */
+  ipcMain.handle('dango:libraryOpenDest', async (_e, args) => {
+    const platformId = String(args?.platformId || '');
+    guard(platformId);
+    const t = core.RULE_FILE_TARGETS[platformId];
+    if (!t) return { ok: false, error: '未知平台' };
+    const p = t.mode === 'copy' ? t.dir() : t.file();
+    try {
+      if (t.mode === 'copy') {
+        await fsp.mkdir(p, { recursive: true });
+        shell.openPath(p);
+      } else if (fs.existsSync(p)) {
+        shell.showItemInFolder(p);
+      } else {
+        await fsp.mkdir(path.dirname(p), { recursive: true });
+        shell.openPath(path.dirname(p));
+      }
+      return { ok: true, path: p };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
+  });
+
+  /** 复制文本到剪贴板（详情页"复制全文"用） */
+  ipcMain.handle('dango:copyText', async (_e, text) => {
+    try {
+      electronMain.clipboard.writeText(String(text || ''));
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
   });
 }
 

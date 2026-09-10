@@ -14,38 +14,53 @@ const fsp = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
 const crypto = require('node:crypto');
+const { execFileSync } = require('node:child_process');
 
 const SKIP_DIRS = new Set(['node_modules', '.git', '.cache', '__pycache__', '.venv', 'venv']);
 const MAX_CHANGE_ITEMS = 200;
 
 /**
- * 六个受管工具包的定义。
+ * 七个受管工具包的定义（codex 有两个可选破甲分支：冷咖啡石井 / 胖虎）。
  * expected 支持 * 通配（前缀匹配），用于 install-manifest-*.json 这类带时间戳的文件。
  * version 来源按顺序尝试，第一个命中的生效，并把来源一并回报给 UI（不猜、不编造）。
  */
 const PACKS = [
   {
     id: 'codex',
-    name: 'Codex 破甲包',
-    subtitle: 'eni-solo 复刻 · 多事件钩子',
+    name: 'Codex 破甲包 · 冷咖啡石井',
+    subtitle: 'eni-solo 复刻 · 多事件钩子 · Astra6',
     folder: 'codex',
     target: 'Codex CLI / 桌面端',
     accent: 'sakura',
-    note: '上一轮结论：二进制层已到顶，包内走 hooks 注入。',
-    expected: ['Install-OneClick.cmd', 'install-replica.ps1', 'materials', 'README-CN.txt', 'Uninstall.ps1'],
+    note: 'v8：Astra6 粒度拆解 + 安装器误判「Codex 正在运行」修复；工具事件纯放行（DeepSeek 400 修复）已在包内保留。与胖虎互斥（胖虎会隔离 hooks.json）。',
+    expected: ['Install-OneClick.cmd', 'install-replica.ps1', 'check_codex.ps1', 'materials', 'README-CN.txt', 'Uninstall.ps1'],
     versionSources: [
       { kind: 'firstLines', file: 'install-replica.ps1', maxLines: 60, pattern: 'v(\\d+\\.\\d+\\.\\d+)' },
       { kind: 'firstLines', file: 'README-CN.txt', maxLines: 5, pattern: 'v(\\d+\\.\\d+(?:\\.\\d+)?)' }
     ]
   },
   {
+    id: 'codex-panghu',
+    name: 'Codex 破甲包 · 胖虎',
+    subtitle: 'keysmith 单文件注入 · model_instructions_file',
+    folder: 'codex-panghu',
+    target: 'Codex CLI / 桌面端',
+    accent: 'tiger',
+    note: 'keysmith v0.5.0：直写 config.toml 的 model_instructions_file + 隔离 hooks.json。与冷咖啡石井互斥，二选一。',
+    expected: ['install.ps1', 'keysmith', 'prompts', 'manifest.sha256', 'README-CN.txt'],
+    versionSources: [
+      { kind: 'firstLines', file: 'README-CN.txt', maxLines: 3, pattern: 'v(\\d+\\.\\d+\\.\\d+)' },
+      { kind: 'firstLines', file: 'install.ps1', maxLines: 20, pattern: 'codex-instruct-v(\\d+\\.\\d+\\.\\d+)\\.py' }
+    ]
+  },
+  {
     id: 'cursor',
     name: 'Cursor 破甲包',
-    subtitle: 'Composer 2.5 定向 · 提问降维轴',
+    subtitle: 'Composer 2.5 + Grok 4.6 双后端定向 · 提问降维轴',
     folder: 'cursor',
     target: 'Cursor 编辑器',
     accent: 'matcha',
-    note: '本轮已做语域软化：[MODE: UNRESTRICTED] → [MODE: LOCAL_WORKSPACE]。',
+    note: 'v3.6：G46 契约级实测 5/5 通过；有效的是请求层级不是规则文本，Grok 4.6 后端禁用槽位劫持类手法。',
     expected: [
       'Install-OneClick.cmd',
       'install_cursor.py',
@@ -115,7 +130,7 @@ const PACKS = [
     folder: 'workbuddy',
     target: 'WorkBuddy 客户端',
     accent: 'soda',
-    note: '本轮小加强：模板清理正则改为大小写不敏感 + 7 种标签变体。',
+    note: 'v1.1：模板清理扩到 plugins 全树 + 插件缓存，根治升级后安全段漏网再生。',
     expected: [
       'Install-OneClick.bat',
       'Install-WB-OneClick.ps1',
@@ -411,7 +426,7 @@ function formatTime(iso) {
 
 function renderReport(hub) {
   const lines = [];
-  lines.push('# 团子工作台 · 六包检查报告');
+  lines.push('# 团子工作台 · 七包检查报告');
   lines.push('');
   lines.push(`- 生成时间：${formatTime(new Date().toISOString())}`);
   lines.push(`- 根目录：${hub.root || '（未选择）'}`);
@@ -469,12 +484,14 @@ function renderReport(hub) {
    部署引擎 · 平台探测 / 脚本编排 / 生效验证
    ------------------------------------------------------------------
    只调用各包目录里**已经存在**的安装与卸载脚本，不生成新的注入内容。
-   执行方式、写入位置、验证标记全部来自对六个包的实际侦察结果。
+   执行方式、写入位置、验证标记全部来自对七个包的实际侦察结果。
    ================================================================== */
 
 const HOME = process.env.USERPROFILE || os.homedir();
 const LOCALAPPDATA = process.env.LOCALAPPDATA || path.join(HOME, 'AppData', 'Local');
 const APPDATA = process.env.APPDATA || path.join(HOME, 'AppData', 'Roaming');
+const PROGRAMFILES = process.env.ProgramFiles || path.join('C:', 'Program Files');
+const PROGRAMFILES_X86 = process.env['ProgramFiles(x86)'] || path.join('C:', 'Program Files (x86)');
 
 function expandEnv(p) {
   return String(p)
@@ -498,6 +515,204 @@ function isDirSync(p) {
   } catch {
     return false;
   }
+}
+
+/* ==================================================================
+   运行时定位（L3 进程层专用）
+   ------------------------------------------------------------------
+   「找不到可执行文件」是分层验证里最容易误报的一层：
+   同一个客户端在不同机器上可能装在 %LOCALAPPDATA%\Programs、Program Files、
+   Scoop、npm 全局、甚至 D 盘；只硬编码一条路径必然在别人机器上翻车。
+   这里做四路并联取证，任一命中即算通过：
+     1) probes.installDirs        已知标准安装位（快，命中率最高）
+     2) scanExe 有界深扫          常见根目录下按文件名搜（覆盖非标安装位）
+     3) registryInstalls          注册表卸载项 DisplayIcon / InstallLocation
+     4) runningProcesses          进程正在跑 —— 进程层最硬的证据
+   所有结果带 TTL 缓存，避免每次验证都全盘扫。
+   ================================================================== */
+
+const RUNTIME_CACHE_TTL = 60000;
+const _dirCache = new Map();
+const _scanCache = new Map();
+let _procCache = { at: 0, set: new Set() };
+let _regCache = { at: 0, list: null };
+
+/** 带 TTL 的 readdirSync（失败返回空数组，不抛） */
+function cachedReaddir(dir) {
+  const now = Date.now();
+  const hit = _dirCache.get(dir);
+  if (hit && now - hit.at < RUNTIME_CACHE_TTL) return hit.entries;
+  let entries = [];
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    entries = [];
+  }
+  _dirCache.set(dir, { at: now, entries });
+  return entries;
+}
+
+/**
+ * 在若干根目录下按深度上限广度搜索指定文件名（大小写不敏感）。
+ * budget 限制访问目录总数，防止在 Program Files 这类大目录上拖死主线程。
+ */
+function scanExe(roots, exeNames, maxDepth = 3, budget = 2500) {
+  const want = new Set((exeNames || []).map((n) => String(n).toLowerCase()));
+  if (!want.size) return null;
+  const rootsReal = [];
+  for (const r of roots || []) {
+    if (r && isDirSync(r) && !rootsReal.includes(r)) rootsReal.push(r);
+  }
+  if (!rootsReal.length) return null;
+  const key = `${rootsReal.join('|')}::${[...want].join(',')}::${maxDepth}::${budget}`;
+  const cached = _scanCache.get(key);
+  if (cached && Date.now() - cached.at < RUNTIME_CACHE_TTL) return cached.hit;
+
+  const queue = rootsReal.map((dir) => ({ dir, depth: 0 }));
+  const seen = new Set(rootsReal);
+  let visited = 0;
+  let hit = null;
+  while (queue.length && visited < budget) {
+    const { dir, depth } = queue.shift();
+    visited += 1;
+    const entries = cachedReaddir(dir);
+    if (!entries.length) continue;
+    // 先判文件：同一层命中即可返回
+    for (const e of entries) {
+      if (e.isFile() && want.has(e.name.toLowerCase())) {
+        hit = path.join(dir, e.name);
+        queue.length = 0;
+        break;
+      }
+    }
+    if (hit) break;
+    if (depth >= maxDepth) continue;
+    for (const e of entries) {
+      if (!e.isDirectory()) continue;
+      const full = path.join(dir, e.name);
+      if (seen.has(full) || SKIP_DIRS.has(e.name.toLowerCase())) continue;
+      seen.add(full);
+      queue.push({ dir: full, depth: depth + 1 });
+    }
+  }
+  _scanCache.set(key, { at: Date.now(), hit });
+  return hit;
+}
+
+/** 当前跑着的进程名集合（小写）。进程层最硬的证据：它正在跑 = 一定装了。 */
+function runningProcesses() {
+  const now = Date.now();
+  if (now - _procCache.at < RUNTIME_CACHE_TTL) return _procCache.set;
+  const set = new Set();
+  try {
+    const out = execFileSync('tasklist', ['/FO', 'CSV', '/NH'], {
+      encoding: 'latin1',
+      timeout: 8000,
+      windowsHide: true,
+      maxBuffer: 8 << 20
+    });
+    for (const line of String(out).split(/\r?\n/)) {
+      const m = line.match(/^\s*"([^"]+)"/);
+      if (m) set.add(m[1].toLowerCase());
+    }
+  } catch {
+    /* tasklist 不可用时静默降级 */
+  }
+  _procCache = { at: now, set };
+  return set;
+}
+
+function runningExeName(names) {
+  const set = runningProcesses();
+  if (!set.size) return null;
+  for (const n of names || []) {
+    if (n && set.has(String(n).toLowerCase())) return String(n);
+  }
+  return null;
+}
+
+/**
+ * 注册表卸载项扫描（HKLM/HKCU × WOW6432Node）。
+ * 取 DisplayIcon / InstallLocation / DisplayName，用于覆盖非标安装目录。
+ */
+function registryInstalls() {
+  const now = Date.now();
+  if (_regCache.list && now - _regCache.at < RUNTIME_CACHE_TTL) return _regCache.list;
+  const roots = [
+    'HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall',
+    'HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall',
+    'HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall'
+  ];
+  const list = [];
+  for (const root of roots) {
+    let out = '';
+    try {
+      out = execFileSync('reg', ['query', root, '/s'], {
+        encoding: 'latin1',
+        timeout: 12000,
+        windowsHide: true,
+        maxBuffer: 24 << 20
+      });
+    } catch {
+      continue;
+    }
+    let cur = null;
+    for (const rawLine of String(out).split(/\r?\n/)) {
+      const line = rawLine.trim();
+      if (/^HKEY_/i.test(line)) {
+        if (cur && (cur.name || cur.icon || cur.dir)) list.push(cur);
+        cur = { name: '', icon: '', dir: '' };
+        continue;
+      }
+      if (!cur) continue;
+      const m = line.match(/^(\S+)\s+REG_\w+\s+(.*)$/);
+      if (!m) continue;
+      const key = m[1].toLowerCase();
+      const val = m[2].trim();
+      if (key === 'displayname') cur.name = val;
+      else if (key === 'displayicon') cur.icon = val;
+      else if (key === 'installlocation') cur.dir = val;
+    }
+    if (cur && (cur.name || cur.icon || cur.dir)) list.push(cur);
+  }
+  _regCache = { at: now, list };
+  return list;
+}
+
+/**
+ * 按软件名在注册表里找 exe。
+ * matchNames 做「包含式」匹配（如 'WorkBuddy' 命中 'WorkBuddy AI'）。
+ */
+function registryExeFor(matchNames, exeNames) {
+  const names = (matchNames || []).map((n) => String(n).toLowerCase()).filter(Boolean);
+  if (!names.length) return null;
+  const exes = (exeNames || []).map((n) => String(n).toLowerCase());
+  const wantIcon = new Set(exes);
+  for (const it of registryInstalls()) {
+    const dn = (it.name || '').toLowerCase();
+    if (!dn || !names.some((n) => dn.includes(n))) continue;
+    // DisplayIcon 形如 "C:\...\App.exe,0"，去掉图标索引
+    const icon = String(it.icon || '').replace(/^"|"$/g, '').replace(/,\s*-?\d+\s*$/, '');
+    if (icon && /\.exe$/i.test(icon) && existsSyncPath(icon)) {
+      if (!wantIcon.size || wantIcon.has(path.basename(icon).toLowerCase())) return icon;
+    }
+    // 退而求其次：在 InstallLocation 里按 exe 名搜一层
+    if (it.dir && isDirSync(it.dir)) {
+      const hit = scanExe([it.dir], exeNames, 2, 400);
+      if (hit) return hit;
+    }
+  }
+  return null;
+}
+
+/** 各盘符根下的常见安装根（对齐 resolvePlatformHome 的"非 C 盘也能找到"思路） */
+function driveRoots() {
+  const roots = [];
+  for (let code = 67; code <= 90; code += 1) {
+    const root = `${String.fromCharCode(code)}:\\`;
+    if (isDirSync(root)) roots.push(root);
+  }
+  return roots;
 }
 
 /**
@@ -561,6 +776,7 @@ function opencodeConfigHome() {
 
 /**
  * 六个目标平台的探测规则（候选路径来自本机实际安装位置）。
+ * codex-panghu 与 codex 同指 Codex 平台，探测规则一致（两个破甲分支共用一个目标软件）。
  */
 const PLATFORM_PROBES = {
   codex: {
@@ -568,51 +784,121 @@ const PLATFORM_PROBES = {
     installDirs: [
       path.join(LOCALAPPDATA, 'Programs', 'Codex++'),
       path.join(LOCALAPPDATA, 'Programs', 'Codex'),
-      path.join(LOCALAPPDATA, 'Programs', 'codex')
+      path.join(LOCALAPPDATA, 'Programs', 'codex'),
+      path.join(LOCALAPPDATA, 'OpenAI', 'Codex'),
+      path.join(LOCALAPPDATA, 'Codex'),
+      path.join(PROGRAMFILES, 'Codex'),
+      path.join(PROGRAMFILES_X86, 'Codex')
     ],
     exes: ['codex-plus-plus.exe', 'codex.exe', 'Codex.exe'],
-    configDirs: [path.join(HOME, '.codex')]
+    configDirs: [path.join(HOME, '.codex')],
+    matchNames: ['codex']
+  },
+  'codex-panghu': {
+    displayName: 'Codex（胖虎）',
+    installDirs: [
+      path.join(LOCALAPPDATA, 'Programs', 'Codex++'),
+      path.join(LOCALAPPDATA, 'Programs', 'Codex'),
+      path.join(LOCALAPPDATA, 'Programs', 'codex'),
+      path.join(LOCALAPPDATA, 'OpenAI', 'Codex'),
+      path.join(LOCALAPPDATA, 'Codex'),
+      path.join(PROGRAMFILES, 'Codex'),
+      path.join(PROGRAMFILES_X86, 'Codex')
+    ],
+    exes: ['codex-plus-plus.exe', 'codex.exe', 'Codex.exe'],
+    configDirs: [path.join(HOME, '.codex')],
+    matchNames: ['codex']
   },
   cursor: {
     displayName: 'Cursor',
-    installDirs: [path.join(LOCALAPPDATA, 'Programs', 'cursor'), path.join(LOCALAPPDATA, 'Programs', 'Cursor')],
+    installDirs: [
+      path.join(LOCALAPPDATA, 'Programs', 'cursor'),
+      path.join(LOCALAPPDATA, 'Programs', 'Cursor'),
+      path.join(LOCALAPPDATA, 'Cursor'),
+      path.join(PROGRAMFILES, 'Cursor'),
+      path.join(PROGRAMFILES_X86, 'Cursor')
+    ],
     exes: ['Cursor.exe', 'cursor.exe'],
-    configDirs: [path.join(HOME, '.cursor'), path.join(APPDATA, 'Cursor')]
+    configDirs: [path.join(HOME, '.cursor'), path.join(APPDATA, 'Cursor')],
+    matchNames: ['cursor']
   },
   dsh: {
     displayName: 'DeepSeek Harness',
     installDirs: [],
     exes: [],
-    configDirs: [path.join(HOME, '.dsh')]
+    configDirs: [path.join(HOME, '.dsh')],
+    matchNames: []
   },
   opencode: {
     displayName: 'OpenCode',
     installDirs: [
       path.join(LOCALAPPDATA, 'Programs', '@opencode-aidesktop'),
-      path.join(LOCALAPPDATA, 'Programs', 'opencode')
+      path.join(LOCALAPPDATA, 'Programs', 'opencode'),
+      path.join(LOCALAPPDATA, 'Programs', 'opencode-desktop'),
+      path.join(LOCALAPPDATA, 'opencode'),
+      path.join(PROGRAMFILES, 'opencode'),
+      path.join(PROGRAMFILES_X86, 'opencode')
     ],
     exes: ['OpenCode.exe', 'opencode.exe'],
-    configDirs: [path.join(APPDATA, 'ai.opencode.desktop'), path.join(HOME, '.opencode')]
+    configDirs: [path.join(APPDATA, 'ai.opencode.desktop'), path.join(HOME, '.opencode')],
+    matchNames: ['opencode']
   },
   workbuddy: {
     displayName: 'WorkBuddy',
-    installDirs: [path.join(LOCALAPPDATA, 'Programs', 'WorkBuddy')],
+    installDirs: [
+      path.join(LOCALAPPDATA, 'Programs', 'WorkBuddy'),
+      path.join(LOCALAPPDATA, 'WorkBuddy'),
+      path.join(PROGRAMFILES, 'WorkBuddy'),
+      path.join(PROGRAMFILES_X86, 'WorkBuddy')
+    ],
     exes: ['WorkBuddy.exe'],
-    configDirs: [path.join(HOME, '.workbuddy')]
+    configDirs: [path.join(HOME, '.workbuddy')],
+    matchNames: ['workbuddy', 'codebuddy']
   },
   'anti-gravity': {
     displayName: 'Antigravity',
     installDirs: [
       path.join(LOCALAPPDATA, 'Programs', 'antigravity'),
-      path.join(LOCALAPPDATA, 'Programs', 'Antigravity')
+      path.join(LOCALAPPDATA, 'Programs', 'Antigravity'),
+      path.join(LOCALAPPDATA, 'Antigravity'),
+      path.join(PROGRAMFILES, 'Antigravity'),
+      path.join(PROGRAMFILES_X86, 'Antigravity')
     ],
     exes: ['Antigravity.exe', 'antigravity.exe'],
-    configDirs: [path.join(HOME, '.gemini'), path.join(APPDATA, 'Antigravity')]
+    configDirs: [path.join(HOME, '.gemini'), path.join(APPDATA, 'Antigravity')],
+    matchNames: ['antigravity']
   }
 };
 
 /**
- * 六个包的部署计划。
+ * 兜底扫描根，分两档（贵的放后面）：
+ *   tight —— 最常见的安装位，可以扫得深一点
+ *   loose —— 各盘符根 / Portable / Software 这类散户装法，只扫浅层
+ * 只为在「标准位全部落空」时才启用，避免每次都全盘扫。
+ */
+function scanRootsTight() {
+  return [path.join(LOCALAPPDATA, 'Programs'), LOCALAPPDATA, PROGRAMFILES, PROGRAMFILES_X86];
+}
+
+function scanRootsLoose() {
+  const roots = [];
+  for (const root of driveRoots()) {
+    roots.push(root);
+    roots.push(path.join(root, 'Programs'));
+    roots.push(path.join(root, 'Portable'));
+    roots.push(path.join(root, 'Software'));
+    roots.push(path.join(root, 'Tools'));
+  }
+  return roots;
+}
+
+/** 两档合并搜索：先紧后松，命中即返回 */
+function scanExeWide(exeNames) {
+  return scanExe(scanRootsTight(), exeNames, 3, 1200) || scanExe(scanRootsLoose(), exeNames, 2, 800);
+}
+
+/**
+ * 七个包的部署计划。
  * evidence 判定"破甲是否生效"，全部来自实际侦察（不是猜的）：
  *   file     目录下存在该文件
  *   dir      该目录存在
@@ -641,6 +927,31 @@ const DEPLOY_PLANS = {
         type: 'file',
         path: path.join(codexHome(), 'AGENTS.md'),
         label: '.codex/AGENTS.md 已部署'
+      }
+    ]
+  },
+  'codex-panghu': {
+    // keysmith 单文件注入：install.ps1 -Action install 直写 config.toml 的 model_instructions_file
+    // 并默认隔离 hooks.json（与冷咖啡石井互斥）。-CodexDir 缺省时脚本自取 %CODEX_HOME% / ~/.codex
+    install: { file: 'install.ps1', kind: 'ps1', args: ['-Action', 'install'] },
+    uninstall: { file: 'install.ps1', kind: 'ps1', args: ['-Action', 'uninstall'] },
+    backupDirs: [codexHome()],
+    evidence: [
+      {
+        type: 'contains',
+        path: path.join(codexHome(), 'config.toml'),
+        pattern: 'model_instructions_file',
+        label: '.codex/config.toml 指向 model_instructions_file'
+      },
+      {
+        type: 'file',
+        path: path.join(codexHome(), 'gpt-unrestricted.md'),
+        label: '.codex/gpt-unrestricted.md 根指令已部署'
+      },
+      {
+        type: 'file',
+        path: path.join(codexHome(), '.codex-keysmith-manifest.json'),
+        label: '.codex/.codex-keysmith-manifest.json 部署清单'
       }
     ]
   },
@@ -729,6 +1040,7 @@ function detectPlatform(id) {
     installed: false,
     installDir: null,
     exePath: null,
+    exeVia: null,
     configDirs: [],
     iconPath: null
   };
@@ -744,6 +1056,7 @@ function detectPlatform(id) {
         const full = path.join(dir, exe);
         if (existsSyncPath(full)) {
           out.exePath = full;
+          out.exeVia = 'installDir';
           out.iconPath = full;
           break;
         }
@@ -751,9 +1064,34 @@ function detectPlatform(id) {
     }
   }
 
+  // 标准位落空 → 注册表 → 非标安装位深扫 → 正在运行的进程（由便宜到贵）
+  if (!out.exePath && probe.exes.length && probe.matchNames && probe.matchNames.length) {
+    const hit = registryExeFor(probe.matchNames, probe.exes);
+    if (hit) {
+      out.exePath = hit;
+      out.exeVia = 'registry';
+      out.iconPath = hit;
+      if (!out.installDir) out.installDir = path.dirname(hit);
+    }
+  }
+  if (!out.exePath && probe.exes.length) {
+    const hit = scanExeWide(probe.exes);
+    if (hit) {
+      out.exePath = hit;
+      out.exeVia = 'scan';
+      out.iconPath = hit;
+      if (!out.installDir) out.installDir = path.dirname(hit);
+    }
+  }
+  if (!out.exePath && probe.exes.length) {
+    const running = runningExeName(probe.exes);
+    if (running) out.exeVia = 'process';
+  }
+
   // 配置目录：codex/dsh/workbuddy/opencode 支持非默认 home，动态解析优先
   const dynamicConfigDirs = {
     codex: () => [codexHome()],
+    'codex-panghu': () => [codexHome()],
     dsh: () => [dshHome()],
     workbuddy: () => [workbuddyHome()],
     opencode: () => [opencodeConfigHome(), path.join(APPDATA, 'ai.opencode.desktop')]
@@ -764,7 +1102,7 @@ function detectPlatform(id) {
   }
 
   // 没有 exe 但有配置目录也算装过（DSH 走 npx）
-  out.installed = Boolean(out.exePath || out.configDirs.length);
+  out.installed = Boolean(out.exePath || out.configDirs.length || out.exeVia === 'process');
   return out;
 }
 
@@ -899,6 +1237,26 @@ const BRAND_ICONS = {
       <circle cx="24" cy="24" r="3.5" fill="#FFFFFF"/>
     </svg>
   `),
+  'codex-panghu': svgToDataUrl(`
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
+      <defs>
+        <linearGradient id="ph-g" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#FF9A3C"/>
+          <stop offset="100%" stop-color="#F26B1D"/>
+        </linearGradient>
+      </defs>
+      <rect width="48" height="48" rx="12" fill="url(#ph-g)"/>
+      <circle cx="24" cy="25" r="12" fill="#FFFFFF"/>
+      <path d="M14 17 L18 13 L19 20 Z" fill="#FFFFFF"/>
+      <path d="M34 17 L30 13 L29 20 Z" fill="#FFFFFF"/>
+      <path d="M17 20 Q19 24 17 28" stroke="#F26B1D" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+      <path d="M31 20 Q29 24 31 28" stroke="#F26B1D" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+      <circle cx="20" cy="24" r="2" fill="#3A2A18"/>
+      <circle cx="28" cy="24" r="2" fill="#3A2A18"/>
+      <path d="M22 29 Q24 31 26 29" stroke="#3A2A18" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+      <ellipse cx="24" cy="27.5" rx="1.6" ry="1.2" fill="#F26B1D"/>
+    </svg>
+  `),
   cursor: svgToDataUrl(`
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
       <rect width="48" height="48" rx="12" fill="#18181B"/>
@@ -992,6 +1350,44 @@ const CONFIG_CHECKS = {
     const hooks = fs.readFileSync(cfg, 'utf8');
     const hasHooks = /hook/i.test(hooks) || existsSyncPath(path.join(dir, 'hooks.json'));
     items.push({ ok: hasHooks, label: 'hooks 已注册', detail: hasHooks ? '' : 'config.toml 里没有 hook 段' });
+
+    const ok = items.every((i) => i.ok);
+    return { ok, detail: ok ? '配置就绪' : items.find((i) => !i.ok).detail, items };
+  },
+
+  'codex-panghu'() {
+    const dir = codexHome();
+    const cfg = path.join(dir, 'config.toml');
+    const items = [];
+
+    if (!existsSyncPath(cfg)) {
+      return { ok: false, detail: `缺少 config.toml（${dir}）`, items: [{ ok: false, label: 'config.toml 存在', detail: cfg }] };
+    }
+    items.push({ ok: true, label: 'config.toml 存在' });
+
+    let raw = '';
+    try {
+      raw = fs.readFileSync(cfg, 'utf8');
+    } catch {
+      raw = '';
+    }
+    // keysmith 部署的核心特征：model_instructions_file 指向 gpt-unrestricted.md
+    const hasInstr = /model_instructions_file\s*=/.test(raw);
+    items.push({ ok: hasInstr, label: 'model_instructions_file 已写入', detail: hasInstr ? '' : 'config.toml 里没有 model_instructions_file' });
+
+    const promptFile = path.join(dir, 'gpt-unrestricted.md');
+    items.push({ ok: existsSyncPath(promptFile), label: 'gpt-unrestricted.md 根指令存在', detail: promptFile });
+
+    const manifest = path.join(dir, '.codex-keysmith-manifest.json');
+    items.push({ ok: existsSyncPath(manifest), label: 'keysmith 部署清单存在', detail: manifest });
+
+    // hooks.json 应被隔离（.disabled）；仍活跃说明会与指令加载冲突
+    const hooksActive = existsSyncPath(path.join(dir, 'hooks.json'));
+    items.push({
+      ok: !hooksActive,
+      label: 'hooks.json 已隔离',
+      detail: hooksActive ? '检测到活跃 hooks.json（胖虎与 hooks 注入互斥，建议卸载冷咖啡石井或加 -SkipHooksIsolation 明确共存）' : ''
+    });
 
     const ok = items.every((i) => i.ok);
     return { ok, detail: ok ? '配置就绪' : items.find((i) => !i.ok).detail, items };
@@ -1108,23 +1504,83 @@ function analyzeReply(text) {
   };
 }
 
-/** codex CLI 的可执行文件探测（版本目录会变，扫最新） */
-function findCodexCli() {
-  const base = path.join(LOCALAPPDATA, 'OpenAI');
-  try {
-    const dirs = fs
-      .readdirSync(base)
-      .filter((n) => /^codex-.*-windows-x64-/i.test(n))
-      .sort()
-      .reverse();
-    for (const d of dirs) {
-      const exe = path.join(base, d, 'cli-native', 'x86_64-pc-windows-msvc', 'bin', 'codex.exe');
-      if (existsSyncPath(exe)) return exe;
-    }
-  } catch {
-    /* ignore */
+/** 从路径里抽版本号，用于「装了多个版本时挑最新」 */
+function versionTuple(p) {
+  const m = String(p).match(/(\d+)\.(\d+)\.(\d+)/);
+  return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
+}
+
+/**
+ * codex CLI 的多候选定位。
+ * 历史版本只认 %LOCALAPPDATA%\OpenAI\codex-*-windows-x64-*\cli-native\...\codex.exe
+ * 这一条硬编码路径，别人机器上换个安装形态（桌面版内嵌 CLI / npm 全局 / PATH）
+ * 就报「找不到 codex CLI」。这里改成候选表 + 有界深扫，并把来源一并返回，
+ * 便于在诊断里如实说明"从哪找到的"。
+ */
+function findCodexCliInfo() {
+  const candidates = [];
+  const push = (p, via) => {
+    if (p && existsSyncPath(p) && !candidates.some((c) => c.path === p)) candidates.push({ path: p, via });
+  };
+
+  // 1) %LOCALAPPDATA%\OpenAI\<版本目录>\cli-native\x86_64-pc-windows-msvc\bin\codex.exe
+  const openaiDir = path.join(LOCALAPPDATA, 'OpenAI');
+  for (const e of cachedReaddir(openaiDir)) {
+    if (!e.isDirectory()) continue;
+    const base = path.join(openaiDir, e.name);
+    push(path.join(base, 'cli-native', 'x86_64-pc-windows-msvc', 'bin', 'codex.exe'), `%LOCALAPPDATA%\\OpenAI\\${e.name}`);
+    push(path.join(base, 'bin', 'codex.exe'), `%LOCALAPPDATA%\\OpenAI\\${e.name}\\bin`);
   }
-  return null;
+  // 2) OpenAI 目录下方任意深度（覆盖结构变体）
+  push(scanExe([openaiDir], ['codex.exe'], 6, 1200), '%LOCALAPPDATA%\\OpenAI（深扫）');
+
+  // 3) 便携/自解压形态
+  for (const p of [
+    path.join(HOME, '.codex', '.sandbox-bin', 'codex.exe'),
+    path.join(HOME, '.codex', 'bin', 'codex.exe'),
+    path.join(LOCALAPPDATA, 'Programs', 'Codex++', 'codex.exe'),
+    path.join(LOCALAPPDATA, 'Codex', 'codex.exe')
+  ]) {
+    push(p, p.replace(HOME, '%USERPROFILE%').replace(LOCALAPPDATA, '%LOCALAPPDATA%'));
+  }
+
+  // 4) 包管理器全局 bin（.cmd/.exe 壳）
+  for (const p of [
+    path.join(APPDATA, 'npm', 'codex.exe'),
+    path.join(APPDATA, 'npm', 'codex.cmd'),
+    path.join(APPDATA, 'npm', 'codex'),
+    path.join(LOCALAPPDATA, 'Yarn', 'bin', 'codex.cmd'),
+    path.join(HOME, 'scoop', 'shims', 'codex.exe'),
+    path.join(HOME, 'scoop', 'shims', 'codex.cmd')
+  ]) {
+    push(p, p.replace(HOME, '%USERPROFILE%').replace(APPDATA, '%APPDATA%').replace(LOCALAPPDATA, '%LOCALAPPDATA%'));
+  }
+
+  // 5) PATH 兜底
+  for (const dir of String(process.env.PATH || '').split(path.delimiter)) {
+    if (!dir) continue;
+    push(path.join(dir, 'codex.exe'), 'PATH');
+    push(path.join(dir, 'codex.cmd'), 'PATH');
+  }
+
+  // 6) 全盘常见位兜底
+  push(scanExeWide(['codex.exe']), '常见安装根（深扫）');
+
+  if (!candidates.length) return { path: null, via: null, candidates: [] };
+  const versioned = candidates.filter((c) => versionTuple(c.path));
+  const pool = versioned.length ? versioned : candidates;
+  pool.sort((a, b) => {
+    const ta = versionTuple(a.path) || [0, 0, 0];
+    const tb = versionTuple(b.path) || [0, 0, 0];
+    for (let i = 0; i < 3; i += 1) if (tb[i] !== ta[i]) return tb[i] - ta[i];
+    return 0;
+  });
+  return { path: pool[0].path, via: pool[0].via, candidates };
+}
+
+/** 向后兼容：只要路径 */
+function findCodexCli() {
+  return findCodexCliInfo().path;
 }
 
 /** GUI 客户端的 exe 探测（复用 PLATFORM_PROBES） */
@@ -1133,9 +1589,72 @@ function findGuiExe(id) {
   return p.exePath || null;
 }
 
+/**
+ * L3 进程层的统一判定入口。
+ * 返回 { ok, mode, exe, soft, label, detail }
+ *   ok=false         真正没装，判失败
+ *   ok=true soft=false  拿到可执行文件，可继续跑 L4
+ *   ok=true soft=true   没拿到可执行文件但证据充分（或用进程/配置目录佐证），
+ *                       降级通过、跳过 L4 —— 不再像以前那样一律报「找不到」
+ */
+function probeRuntime(id) {
+  const probe = PLATFORM_PROBES[id] || {};
+  const chan = L4_CHANNELS[id] || { mode: 'gui' };
+  const mode = chan.mode || 'gui';
+
+  if (mode === 'cli') {
+    const info = findCodexCliInfo();
+    if (info.path) {
+      return { ok: true, mode: 'cli', exe: info.path, soft: false, label: 'CLI 已定位', detail: `${info.path}${info.via ? `（来源：${info.via}）` : ''}` };
+    }
+    // CLI 缺失 → 回退 Codex 桌面客户端通道（有客户端也能验证，不必判失败）
+    const gui = findGuiExe(id);
+    if (gui) {
+      return { ok: true, mode: 'gui', exe: gui, soft: true, label: '未找到 codex CLI，回退客户端通道', detail: gui };
+    }
+    const running = runningExeName(probe.exes || []);
+    if (running) {
+      return { ok: true, mode: 'gui', exe: null, soft: true, label: `进程已在运行（${running}）`, detail: `${running} 正在运行，客户端已安装` };
+    }
+    return {
+      ok: false,
+      mode: 'cli',
+      exe: null,
+      soft: false,
+      label: '未找到 codex CLI 或桌面客户端',
+      detail: '已查：%LOCALAPPDATA%\\OpenAI、~/.codex、npm/Yarn/scoop 全局、PATH、Program Files'
+    };
+  }
+
+  if (mode === 'gui') {
+    const exe = findGuiExe(id);
+    if (exe) return { ok: true, mode: 'gui', exe, soft: false, label: '客户端已安装', detail: exe };
+    const running = runningExeName(probe.exes || []);
+    if (running) {
+      return { ok: true, mode: 'gui', exe: null, soft: true, label: `进程已在运行（${running}）`, detail: `${running} 正在运行，客户端已安装` };
+    }
+    const p = detectPlatform(id);
+    if (p.installed) {
+      return {
+        ok: true,
+        mode: 'gui',
+        exe: null,
+        soft: true,
+        label: '未定位可执行文件，按已安装证据降级通过',
+        detail: `配置目录：${p.configDirs.join('；') || '（无）'}`
+      };
+    }
+    return { ok: false, mode: 'gui', exe: null, soft: false, label: '客户端未安装', detail: '未在常见安装位、注册表或运行进程中检测到该客户端' };
+  }
+
+  // gui-note / none：该平台没有独立进程通道，跳过而不是判失败
+  return { ok: true, mode: 'skip', exe: null, soft: true, label: chan.note || '该平台无独立进程通道（已跳过）', detail: '' };
+}
+
 /** 每个平台的 L4 通道类型：cli 真发 / gui playwright 拉起 */
 const L4_CHANNELS = {
   codex: { mode: 'cli' },
+  'codex-panghu': { mode: 'cli' },
   dsh: { mode: 'gui-note', note: 'DSH 走 npx 临时缓存，无独立 CLI' },
   cursor: { mode: 'gui' },
   opencode: { mode: 'gui' },
@@ -1146,7 +1665,7 @@ const L4_CHANNELS = {
 /* ==================================================================
    内嵌破甲包 · 软件单体分发
    ------------------------------------------------------------------
-   打包后六包在 process.resourcesPath/packs；开发态在项目 packed-packs。
+   打包后七包在 process.resourcesPath/packs；开发态在项目 packed-packs。
    脚本必须落在真实文件系统（extraResources），不能进 asar。
    ================================================================== */
 
@@ -1192,6 +1711,19 @@ const PLATFORM_SIGNATURES = {
       { re: /\.codex|codex\.exe|CODEX_HOME|eni-?solo/i, weight: 12 },
       { re: /config\.toml|hooks\.json/i, weight: 5 },
       { re: /gpt-?5|openai|codex/i, weight: 3 }
+    ]
+  },
+  'codex-panghu': {
+    fileHints: [
+      { re: /codex-instruct|keysmith/i, weight: 40 },
+      { re: /gpt-unrestricted/i, weight: 14 },
+      { re: /胖虎|panghu/i, weight: 12 },
+      { re: /codex/i, weight: 5 }
+    ],
+    contentHints: [
+      { re: /model_instructions_file|keysmith|codex-instruct/i, weight: 14 },
+      { re: /\.codex|CODEX_HOME/i, weight: 8 },
+      { re: /gpt-unrestricted/i, weight: 6 }
     ]
   },
   cursor: {
@@ -1273,6 +1805,11 @@ const RULE_FILE_SIGNATURES = {
     { re: /\.codex[\\/]|CODEX_HOME|codex\.exe|config\.toml/i, weight: 16 },
     { re: /codex/i, weight: 10 },
     { re: /AGENTS\.md/i, weight: 6 }
+  ],
+  'codex-panghu': [
+    { re: /model_instructions_file|keysmith|codex-instruct|胖虎|panghu/i, weight: 22 },
+    { re: /gpt-unrestricted/i, weight: 10 },
+    { re: /\.codex[\\/]|CODEX_HOME/i, weight: 8 }
   ],
   cursor: [
     { re: /\.cursor[\\/]|cursorrules|Composer/i, weight: 16 },
@@ -1573,6 +2110,13 @@ const RULE_FILE_TARGETS = {
     file: () => path.join(codexHome(), 'AGENTS.md'),
     label: '.codex/AGENTS.md（全局指令层）'
   },
+  'codex-panghu': {
+    // 胖虎分支同样落 .codex/AGENTS.md：model_instructions_file 与 AGENTS.md 是两条独立注入层，
+    // 词库追加不会破坏 keysmith 部署（AGENTS.md 本来就在 install.ps1 的 Sync-ExtraFiles 清单里）
+    mode: 'append',
+    file: () => path.join(codexHome(), 'AGENTS.md'),
+    label: '.codex/AGENTS.md（胖虎分支全局指令层）'
+  },
   dsh: {
     mode: 'append',
     file: () => path.join(dshHome(), 'AGENTS.md'),
@@ -1602,23 +2146,38 @@ function buildImportBlock(name, content) {
 }
 
 /* ===================================================================
- *  词库（智汇AI 用户提示词库，内嵌 + 按需补全）
+ *  词库 v2（智汇AI 用户提示词库）
  *  -------------------------------------------------------------------
- *  数据源：
- *    - bundled:   resources/library/library.json   （master 单文件，含 3134 条 metadata + 全文）
- *    - detail:    resources/library/details/<i>.json（按 index 拆分的全文，可选）
- *    - fallback:  resources/library/meta.json     （仅 metadata，供无全文快照兜底）
- *  运行时：
- *    - loadBuiltinLibrary()  读 bundled 列表（启动秒开）
- *    - fetchBuiltinDetail(i) 联网或读缓存拿全文（注入时用）
- *    - importLibraryContent() 复用 RULE_FILE_TARGETS 落到对应平台
+ *  数据源（只读，全部在 app 自己的 resources 里）：
+ *    - resources/library/library.json   master 单文件：3134 条 metadata + 全文
+ *    - resources/library/meta.json      仅 metadata（可选，体积小时优先）
+ *    - resources/library/details/<i>.json  按 index 拆分的全文（可选）
+ *
+ *  读路径（全部带进程内缓存，25MB 只 parse 一次）：
+ *    - libraryMeta()      → 列表用，剥掉 content，IPC 载荷 ~1MB 而不是 25MB
+ *    - libraryDetail(i)   → 单条全文，本地优先，缺失才联网
+ *    - libraryStats()     → 分类 / 成功率 / 来源分布
+ *
+ *  写路径（全部可逆，全部先备份）：
+ *    - injectLibraryEntry()      写入平台规则位，key 唯一 → 可精准卸载
+ *    - listLibraryInjections()   扫描平台文件，列出当前生效的注入块
+ *    - removeLibraryInjection()  按 key 摘掉标记块（append）或删 .mdc（copy）
+ *
+ *  红线：
+ *    - 注入记录独立存放（userData/library-injections.json），
+ *      绝不写进 state.imported —— 那是"第三方破甲包"的槽位，
+ *      混用会把用户导入的包目录顶掉。
  * =================================================================== */
 
 const LIBRARY_BUNDLE_FILENAME = 'library.json';
 const LIBRARY_META_FILENAME = 'meta.json';
 const LIBRARY_DETAIL_PREFIX = 'details';
-const LIBRARY_REMOTE_LIST = 'https://api.12300.top/prompt-admin/api/preset-prompts';
 const LIBRARY_REMOTE_DETAIL = 'https://api.12300.top/prompt-admin/api/preset-prompt?id=';
+/** 列表预览截断长度：够 UI 显示 3 行，又不至于把 25MB 塞过 IPC */
+const LIBRARY_PREVIEW_CHARS = 220;
+
+function existsFileSync(p) { try { return fs.statSync(p).isFile(); } catch { return false; } }
+function libStamp() { return new Date().toISOString().replace(/[:.]/g, '-'); }
 
 function builtinLibraryDir() {
   const candidates = [];
@@ -1630,111 +2189,572 @@ function builtinLibraryDir() {
   return null;
 }
 
-/** 读内嵌词库列表（含 metadata + preview），启动时秒开 */
-function loadBuiltinLibrary() {
-  const dir = builtinLibraryDir();
-  if (!dir) return { ok: false, error: 'no bundled library', prompts: [], dir: null };
-  // 优先单文件（meta + 全文一体），其次 meta-only 兜底
-  const bundle = path.join(dir, LIBRARY_BUNDLE_FILENAME);
-  if (existsFileSync(bundle)) {
-    const data = JSON.parse(fs.readFileSync(bundle, 'utf8'));
-    return { ok: true, prompts: data.prompts || [], total: data.total || (data.prompts || []).length, fetchedAt: data.fetchedAt || null, dir, source: 'bundle' };
+/** 缓存失效键：文件变了（mtime + size）才重新 parse */
+function libraryCacheKey(dir) {
+  for (const name of [LIBRARY_BUNDLE_FILENAME, LIBRARY_META_FILENAME]) {
+    const f = path.join(dir, name);
+    try {
+      const st = fs.statSync(f);
+      return `${name}|${st.mtimeMs}|${st.size}`;
+    } catch { /* 下一个候选 */ }
   }
-  const meta = path.join(dir, LIBRARY_META_FILENAME);
-  if (existsFileSync(meta)) {
-    const data = JSON.parse(fs.readFileSync(meta, 'utf8'));
-    return { ok: true, prompts: data.prompts || [], total: data.total || (data.prompts || []).length, fetchedAt: data.fetchedAt || null, dir, source: 'meta' };
-  }
-  return { ok: false, error: 'no library snapshot in ' + dir, prompts: [], dir };
+  return null;
 }
 
-function existsFileSync(p) { try { return fs.statSync(p).isFile(); } catch { return false; } }
+let LIB_CACHE = null;
+let LIB_CACHE_KEY = null;
 
-/** 取某条目的全文。优先读 bundled detail 或缓存；都没有就回 preview，最后回退到联网 */
-function fetchBuiltinDetail(index) {
-  if (!Number.isFinite(index) || index < 0) return { ok: false, error: 'invalid index' };
+/**
+ * 载入原始词库（含全文），带缓存。
+ * 返回 { ok, prompts, total, fetchedAt, source, dir, fullText }
+ *   source:   bundle=完整快照 / meta=仅元数据 / none=没找到
+ *   fullText: 这份快照里 content 字段是否齐备
+ */
+function loadLibraryRaw() {
   const dir = builtinLibraryDir();
-  // 1) bundled detail
+  if (!dir) return { ok: false, error: 'no bundled library', prompts: [], total: 0, dir: null, source: 'none', fullText: false };
+
+  const key = libraryCacheKey(dir);
+  if (key && LIB_CACHE && LIB_CACHE_KEY === key) return LIB_CACHE;
+
+  let out = null;
+  const bundle = path.join(dir, LIBRARY_BUNDLE_FILENAME);
+  if (existsFileSync(bundle)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(bundle, 'utf8'));
+      const prompts = data.prompts || [];
+      out = { ok: true, prompts, total: data.total || prompts.length, fetchedAt: data.fetchedAt || null, dir, source: 'bundle', fullText: true };
+    } catch (e) {
+      out = { ok: false, error: 'library.json 解析失败: ' + e.message, prompts: [], total: 0, dir, source: 'none', fullText: false };
+    }
+  } else {
+    const meta = path.join(dir, LIBRARY_META_FILENAME);
+    if (existsFileSync(meta)) {
+      try {
+        const data = JSON.parse(fs.readFileSync(meta, 'utf8'));
+        const prompts = data.prompts || [];
+        out = { ok: true, prompts, total: data.total || prompts.length, fetchedAt: data.fetchedAt || null, dir, source: 'meta', fullText: false };
+      } catch (e) {
+        out = { ok: false, error: 'meta.json 解析失败: ' + e.message, prompts: [], total: 0, dir, source: 'none', fullText: false };
+      }
+    }
+  }
+  if (!out) out = { ok: false, error: 'no library snapshot in ' + dir, prompts: [], total: 0, dir, source: 'none', fullText: false };
+
+  LIB_CACHE = out;
+  LIB_CACHE_KEY = key;
+  return out;
+}
+
+/** 向后兼容：旧调用点仍拿得到 prompts（含全文） */
+function loadBuiltinLibrary() { return loadLibraryRaw(); }
+
+/** 把一条原始记录压成列表项：剥 content，带 index，preview 截断 */
+function toLibraryMeta(p, index) {
+  const full = typeof p.content === 'string' ? p.content : '';
+  const preview = String(p.content_preview || full.slice(0, LIBRARY_PREVIEW_CHARS) || '');
+  return {
+    index,
+    id: p.id ?? index,
+    name: p.name || `未命名 #${index}`,
+    desc: p.desc || '',
+    category: p.category || '',
+    category_label: p.category_label || '通用安全',
+    source: p.source || '未标注',
+    success_rate: Number(p.success_rate) || 0,
+    content_length: Number(p.content_length) || full.length || preview.length,
+    preview,
+    has_full: full.length > 0 || Boolean(p.content_preview)
+  };
+}
+
+/** 列表用（IPC 安全体积） */
+function libraryMeta() {
+  const raw = loadLibraryRaw();
+  return {
+    ok: raw.ok,
+    error: raw.error || null,
+    total: raw.total,
+    source: raw.source,
+    fullText: raw.fullText,
+    fetchedAt: raw.fetchedAt,
+    dir: raw.dir,
+    prompts: (raw.prompts || []).map(toLibraryMeta)
+  };
+}
+
+/** 分类 / 成功率 / 来源统计（前端做分面筛选用） */
+function libraryStats() {
+  const raw = loadLibraryRaw();
+  const prompts = raw.prompts || [];
+  const categories = {};
+  const sources = {};
+  const rates = { r90: 0, r80: 0, r70: 0, rLow: 0, rNone: 0 };
+  let fullCount = 0;
+  let totalChars = 0;
+  for (const p of prompts) {
+    const c = p.category_label || '通用安全';
+    categories[c] = (categories[c] || 0) + 1;
+    const s = p.source || '未标注';
+    sources[s] = (sources[s] || 0) + 1;
+    const r = Number(p.success_rate) || 0;
+    if (r >= 90) rates.r90 += 1;
+    else if (r >= 80) rates.r80 += 1;
+    else if (r >= 70) rates.r70 += 1;
+    else if (r > 0) rates.rLow += 1;
+    else rates.rNone += 1;
+    const len = (typeof p.content === 'string' && p.content.length) || Number(p.content_length) || 0;
+    totalChars += len;
+    if (typeof p.content === 'string' && p.content.length > 0) fullCount += 1;
+  }
+  return {
+    ok: raw.ok,
+    total: prompts.length,
+    categories,
+    sources,
+    rates,
+    fullCount,
+    previewOnly: prompts.length - fullCount,
+    totalChars,
+    dir: raw.dir,
+    source: raw.source,
+    fetchedAt: raw.fetchedAt
+  };
+}
+
+/**
+ * 取全文。优先级：
+ *   1) details/<i>.json（拆分快照）
+ *   2) library.json 内联 content
+ *   3) meta 里的 content / content_preview
+ *   4) 联网补全（只在上面全落空时）
+ */
+function fetchBuiltinDetail(index) {
+  const i = Number(index);
+  if (!Number.isInteger(i) || i < 0) return { ok: false, error: 'index 非法', index: i };
+  const raw = loadLibraryRaw();
+  const dir = raw.dir;
+
   if (dir) {
-    const f = path.join(dir, LIBRARY_DETAIL_PREFIX, index + '.json');
+    const f = path.join(dir, LIBRARY_DETAIL_PREFIX, i + '.json');
     if (existsFileSync(f)) {
       try {
         const d = JSON.parse(fs.readFileSync(f, 'utf8'));
-        return { ok: true, detail: d, source: 'bundled' };
-      } catch { /* fallthrough */ }
-    }
-    // 2) bundled single-file（含全文）
-    const bundle = path.join(dir, LIBRARY_BUNDLE_FILENAME);
-    if (existsFileSync(bundle)) {
-      try {
-        const arr = JSON.parse(fs.readFileSync(bundle, 'utf8'));
-        const d = (arr.prompts || [])[index];
-        if (d && d.content) return { ok: true, detail: d, source: 'bundled-bundle' };
+        if (d && typeof d.content === 'string' && d.content) {
+          return { ok: true, detail: { ...toLibraryMeta(d, i), content: d.content }, source: 'bundled' };
+        }
       } catch { /* fallthrough */ }
     }
   }
-  // 3) preview-only fallback：列表里有 preview，没有 content
-  const list = loadBuiltinLibrary();
-  const meta = (list.prompts || [])[index];
-  if (meta && meta.content) return { ok: true, detail: meta, source: 'meta-inline' };
-  if (meta && meta.content_preview) {
-    return { ok: true, detail: {
-      name: meta.name, desc: meta.desc, category: meta.category, category_label: meta.category_label,
-      source: meta.source, success_rate: meta.success_rate,
-      content: meta.content_preview + (meta.content_length > meta.content_preview.length ? '\n\n<!-- preview only, 联网后可注入完整内容 -->' : ''),
-    }, source: 'preview-only' };
+
+  const p = (raw.prompts || [])[i];
+  if (!p) return { ok: false, error: `词库里没有第 ${i} 条`, index: i };
+  if (typeof p.content === 'string' && p.content.length > 0) {
+    return { ok: true, detail: { ...toLibraryMeta(p, i), content: p.content }, source: 'local' };
   }
-  return { ok: false, error: 'detail not found', index };
+  if (p.content_preview) {
+    return {
+      ok: true,
+      partial: true,
+      detail: { ...toLibraryMeta(p, i), content: p.content_preview },
+      source: 'preview',
+      error: '本地只有预览片段，完整内容需联网获取'
+    };
+  }
+  return { ok: false, error: '本地无全文', index: i };
 }
 
-/** 在线拉一条全文（用户初次联网时补全缓存；当前不写盘，避免污染 userData） */
+/** 联网取全文（仅本地缺失时兜底） */
 async function fetchBuiltinDetailRemote(index) {
+  const i = Number(index);
+  if (!Number.isInteger(i) || i < 0) return { ok: false, error: 'index 非法' };
   return new Promise((resolve) => {
     const https = require('node:https');
-    const req = https.get(LIBRARY_REMOTE_DETAIL + index, { timeout: 15000 }, (res) => {
+    const req = https.get(LIBRARY_REMOTE_DETAIL + i, { timeout: 15000 }, (res) => {
       if (res.statusCode !== 200) { res.resume(); return resolve({ ok: false, error: 'http ' + res.statusCode }); }
       const chunks = [];
       res.on('data', (c) => chunks.push(c));
       res.on('end', () => {
         try {
           const d = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-          resolve({ ok: true, detail: d, source: 'remote' });
+          const body = d && (d.content || (d.data && d.data.content));
+          if (!body) return resolve({ ok: false, error: '远端无 content 字段' });
+          resolve({ ok: true, detail: { ...toLibraryMeta({ ...(d.data || d), content: body }, i), content: body }, source: 'remote' });
         } catch (e) { resolve({ ok: false, error: 'parse: ' + e.message }); }
       });
     });
     req.on('error', (e) => resolve({ ok: false, error: e.message }));
-    req.on('timeout', () => { req.destroy(); resolve({ ok: false, error: 'timeout' }); });
+    req.on('timeout', () => { req.destroy(); resolve({ ok: false, error: '超时（15s）' }); });
   });
 }
 
-/** 把词库条目注入到指定平台（复用 RULE_FILE_TARGETS + buildImportBlock） */
+/** 全文解析：本地优先 → 联网兜底，一次调用给出确定结果 */
+async function resolveLibraryContent(index) {
+  const local = fetchBuiltinDetail(index);
+  if (local.ok && !local.partial) return local;
+  const remote = await fetchBuiltinDetailRemote(index);
+  if (remote.ok) return remote;
+  if (local.ok) return { ...local, remoteError: remote.error };
+  return { ok: false, error: local.error + (remote.error ? ' / 联网也失败: ' + remote.error : ''), index: Number(index) };
+}
+
+/* ------------------------------------------------- 注入 key 与标记块 */
+
+/**
+ * 注入块唯一 key：lib<index>_<安全名>。
+ * 带 index 是为了两条同名词条不会互相顶掉，卸载时能精准命中。
+ * 字符集必须和 buildImportBlock 的 safe 正则一致，否则扫不回来。
+ */
+function injectionKey(index, name) {
+  const base = String(name || 'entry').replace(/[\\/:*?"<>|]/g, '_').replace(/\.(md|mdc|txt)$/i, '');
+  const safe = base.replace(/[^\w.一-龥-]+/g, '_').slice(0, 60) || 'entry';
+  return `lib${Number(index) || 0}_${safe}`;
+}
+
+function buildInjectionBlock(key, content) {
+  return `\n\n<!-- shiyi-imported:${key}:start -->\n${content}\n<!-- shiyi-imported:${key}:end -->\n`;
+}
+
+/** 扫出一个文件里所有注入块的 key */
+function scanInjectionKeys(text) {
+  const out = [];
+  const re = /<!--\s*shiyi-imported:([^:>]+):start\s*-->/g;
+  let m;
+  while ((m = re.exec(String(text || ''))) !== null) {
+    const k = m[1].trim();
+    if (k && !out.includes(k)) out.push(k);
+  }
+  return out;
+}
+
+/** 从文本里精准摘掉一个 key 的标记块（含前后空行）；未命中原样返回，不做任何改写 */
+function stripInjectionBlock(text, key) {
+  const src = String(text || '');
+  const esc = String(key).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(`\\n*<!--\\s*shiyi-imported:${esc}:start\\s*-->[\\s\\S]*?<!--\\s*shiyi-imported:${esc}:end\\s*-->\\n*`, 'g');
+  const next = src.replace(re, '\n');
+  if (next === src) return { text: src, removed: false };
+  return { text: next.replace(/\n{3,}/g, '\n\n').trim() + '\n', removed: true };
+}
+
+/**
+ * 注入前的平台预检：告诉 UI「会写到哪个文件、那文件现在什么样、已有几个注入块、破甲层是否生效」。
+ * 这是让用户看得懂自己在干什么的关键一步，不做等于黑箱写入。
+ */
+function libraryPlatformTargets() {
+  const out = [];
+  for (const [id, t] of Object.entries(RULE_FILE_TARGETS)) {
+    const row = { id, mode: t.mode, label: t.label };
+    try {
+      if (t.mode === 'copy') {
+        const dir = t.dir();
+        row.path = dir;
+        row.exists = isDirSync(dir);
+        let files = [];
+        try { files = fs.readdirSync(dir).filter((n) => /^shiyi-imported-.*\.mdc$/i.test(n)); } catch { /* 目录不存在 */ }
+        row.injectedKeys = files.map((n) => n.replace(/^shiyi-imported-/, '').replace(/\.mdc$/i, ''));
+        row.injectedCount = files.length;
+        row.size = 0;
+        for (const n of files) { try { row.size += fs.statSync(path.join(dir, n)).size; } catch { /* skip */ } }
+      } else {
+        const file = t.file();
+        row.path = file;
+        row.exists = existsFileSync(file);
+        let text = '';
+        try { text = fs.readFileSync(file, 'utf8'); } catch { /* 不存在 */ }
+        row.injectedKeys = scanInjectionKeys(text);
+        row.injectedCount = row.injectedKeys.length;
+        row.size = Buffer.byteLength(text, 'utf8');
+        row.lines = text ? text.split('\n').length : 0;
+      }
+      // 平台安装状态 + 破甲层生效状态（best-effort，探测失败不影响主数据）
+      try {
+        const dp = detectPlatform(id);
+        row.installed = Boolean(dp && dp.installed);
+      } catch { row.installed = false; }
+      try {
+        row.breakActive = verifyBreak(id).active;
+      } catch { row.breakActive = null; }
+    } catch (e) {
+      row.error = e.message;
+      row.exists = false;
+      row.injectedKeys = [];
+      row.injectedCount = 0;
+      row.size = 0;
+    }
+    out.push(row);
+  }
+  return out;
+}
+
+/**
+ * 写入一条词库内容到平台规则位。
+ *   copy（cursor）：落成 .cursor/rules/shiyi-imported-<key>.mdc，带 frontmatter
+ *   append（其余 5）：以标记块追加到全局指令文件，写前自动备份
+ * 同 key 重复注入 = 覆盖更新，不会越堆越多。
+ *
+ * opts.mode:
+ *   'replace'（推荐）：写入前清掉该平台所有「词库注入」的块/文件，
+ *                      平台始终只保留这一条现役词库规则 —— 这才是"替换提示词"。
+ *                      用户自己导入的块（非 lib 前缀）一律不碰。
+ *   'append'（默认）：  只覆盖同 key，其余词库注入保留（多条规则叠加）。
+ */
 async function importLibraryContent(platformId, name, content, opts = {}) {
   const target = RULE_FILE_TARGETS[platformId];
   if (!target) throw new Error(`${platformId} 不支持注入`);
-  const baseName = String(name || ('library-' + Date.now())).replace(/[\\/:*?"<>|]/g, '_');
-  const safeName = baseName.replace(/\.(md|mdc|txt)$/i, '');
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  if (typeof content !== 'string' || !content.trim()) throw new Error('词条内容为空');
+
+  const index = Number.isInteger(Number(opts.index)) ? Number(opts.index) : 0;
+  const key = opts.key || injectionKey(index, name);
+  const stamp = libStamp();
+  const replace = opts.mode === 'replace';
+  const contentHash = crypto.createHash('sha256').update(content, 'utf8').digest('hex').slice(0, 16);
+  let displaced = [];
 
   if (target.mode === 'copy') {
     const destDir = target.dir();
     await fsp.mkdir(destDir, { recursive: true });
-    const dest = path.join(destDir, target.fileName(baseName));
-    const body = target.wrap ? target.wrap(baseName, content) : content;
+
+    if (replace) {
+      // 备份并移除其他词库注入的 .mdc（lib 前缀才算词库来源，用户导入的不动）
+      let files = [];
+      try { files = fs.readdirSync(destDir).filter((n) => /^shiyi-imported-lib\d+_.*\.mdc$/i.test(n)); } catch { /* 目录刚建 */ }
+      for (const n of files) {
+        const p = path.join(destDir, n);
+        const oldKey = n.replace(/^shiyi-imported-/, '').replace(/\.mdc$/i, '');
+        if (oldKey === key) continue; // 自己马上会被覆盖写
+        if (opts.backupDir) {
+          try {
+            await fsp.mkdir(opts.backupDir, { recursive: true });
+            await fsp.copyFile(p, path.join(opts.backupDir, `${platformId}-replaced-${stamp}-${n}`));
+          } catch { /* best-effort */ }
+        }
+        await fsp.rm(p, { force: true });
+        displaced.push(oldKey);
+      }
+    }
+
+    const dest = path.join(destDir, `shiyi-imported-${key}.mdc`);
+    // 覆盖前把旧文件挪进备份，保持可回滚
+    if (opts.backup !== false && existsFileSync(dest) && opts.backupDir) {
+      try {
+        await fsp.mkdir(opts.backupDir, { recursive: true });
+        await fsp.copyFile(dest, path.join(opts.backupDir, `${platformId}-${stamp}-${path.basename(dest)}`));
+      } catch { /* best-effort，不阻塞注入 */ }
+    }
+    const body = `---\ndescription: 破甲词库注入 · ${name}\nglobs:\nalwaysApply: true\n---\n\n<!-- shiyi-imported:${key}:start -->\n${content}\n<!-- shiyi-imported:${key}:end -->\n`;
     await fsp.writeFile(dest, body, 'utf8');
-    return { ok: true, mode: 'copy', dest, label: target.label };
+    return { ok: true, mode: 'copy', dest, key, label: target.label, bytes: Buffer.byteLength(body, 'utf8'), contentHash, displaced };
   }
 
-  // append：标记块方式追加
   const targetFile = target.file();
   await fsp.mkdir(path.dirname(targetFile), { recursive: true });
-  if (opts.backup !== false && fs.existsSync(targetFile)) {
-    const bakDir = path.join(BACKUP_DIR, 'library-append');
-    await fsp.mkdir(bakDir, { recursive: true });
-    try { await fsp.copyFile(targetFile, path.join(bakDir, `${platformId}-${stamp}-${path.basename(targetFile)}`)); } catch { /* best-effort */ }
+
+  let prev = '';
+  try { prev = await fsp.readFile(targetFile, 'utf8'); } catch { prev = ''; }
+
+  if (opts.backup !== false && prev && opts.backupDir) {
+    try {
+      await fsp.mkdir(opts.backupDir, { recursive: true });
+      await fsp.copyFile(targetFile, path.join(opts.backupDir, `${platformId}-${stamp}-${path.basename(targetFile)}`));
+    } catch { /* best-effort */ }
   }
-  const block = buildImportBlock(baseName, content);
-  await fsp.appendFile(targetFile, block, 'utf8');
-  return { ok: true, mode: 'append', dest: targetFile, label: target.label };
+
+  let cleaned = prev || '';
+  // 同 key 已存在 → 先摘掉旧的再写，避免重复堆叠
+  if (cleaned) cleaned = stripInjectionBlock(cleaned, key).text;
+  if (replace && cleaned) {
+    // 摘掉其他所有 lib 前缀块（词库来源），用户导入块保留
+    for (const k of scanInjectionKeys(cleaned)) {
+      if (k !== key && /^lib\d+_/.test(k)) {
+        cleaned = stripInjectionBlock(cleaned, k).text;
+        displaced.push(k);
+      }
+    }
+  }
+  const block = buildInjectionBlock(key, content);
+  await fsp.writeFile(targetFile, (cleaned ? cleaned.replace(/\n$/, '') : '') + block, 'utf8');
+
+  return { ok: true, mode: 'append', dest: targetFile, key, label: target.label, bytes: Buffer.byteLength(block, 'utf8'), contentHash, displaced };
+}
+
+/**
+ * 注入生效复核：以磁盘为准回答三个问题
+ *   1) exists    —— 标记块/文件还在不在（可能被客户端重写、被用户手删）
+ *   2) hashMatch —— 内容和注入时是否一致（被改过 = drifted）
+ *   3) breakActive —— 该平台破甲层整体状态（复用 verifyBreak，尽力而为）
+ * 注入成功 ≠ 生效：写完之后必须回读验证，这一步不能省。
+ */
+function verifyLibraryInjection(platformId, key, expectedHash) {
+  const target = RULE_FILE_TARGETS[platformId];
+  if (!target) return { ok: false, error: `${platformId} 不支持`, exists: false };
+  const k = String(key || '');
+  if (!k) return { ok: false, error: 'key 为空', exists: false };
+
+  let exists = false;
+  let hashMatch = null;
+  let actualHash = null;
+  let bodyChars = 0;
+
+  try {
+    if (target.mode === 'copy') {
+      const file = path.join(target.dir(), `shiyi-imported-${k}.mdc`);
+      if (existsFileSync(file)) {
+        exists = true;
+        const text = fs.readFileSync(file, 'utf8');
+        const m = text.match(new RegExp(`<!--\\s*shiyi-imported:${k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}:start\\s*-->\\n([\\s\\S]*?)\\n<!--\\s*shiyi-imported:${k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}:end\\s*-->`));
+        const body = m ? m[1] : text;
+        bodyChars = body.length;
+        actualHash = crypto.createHash('sha256').update(body, 'utf8').digest('hex').slice(0, 16);
+        if (expectedHash) hashMatch = actualHash === expectedHash;
+      }
+    } else {
+      const file = target.file();
+      if (existsFileSync(file)) {
+        const text = fs.readFileSync(file, 'utf8');
+        const esc = k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const re = new RegExp(`<!--\\s*shiyi-imported:${esc}:start\\s*-->\\n([\\s\\S]*?)\\n<!--\\s*shiyi-imported:${esc}:end\\s*-->`);
+        const m = text.match(re);
+        if (m) {
+          exists = true;
+          const body = m[1];
+          bodyChars = body.length;
+          actualHash = crypto.createHash('sha256').update(body, 'utf8').digest('hex').slice(0, 16);
+          if (expectedHash) hashMatch = actualHash === expectedHash;
+        }
+      }
+    }
+  } catch (e) {
+    return { ok: false, error: e.message, exists: false };
+  }
+
+  let breakActive = null;
+  try { breakActive = verifyBreak(platformId).active; } catch { breakActive = null; }
+
+  return {
+    ok: true,
+    platformId,
+    key: k,
+    exists,
+    hashMatch,
+    actualHash,
+    bodyChars,
+    breakActive,
+    verdict: !exists ? 'missing' : hashMatch === false ? 'drifted' : 'active'
+  };
+}
+
+/** 批量复核一个平台的全部词库注入块（history 提供 expectedHash） */
+function verifyLibraryPlatform(platformId, historyItems) {
+  const scan = listLibraryInjections(platformId);
+  if (!scan.ok) return scan;
+  const histByKey = {};
+  for (const h of historyItems || []) {
+    if (h.platformId === platformId && h.key) histByKey[h.key] = h;
+  }
+  const items = (scan.items || []).map((x) => {
+    const h = histByKey[x.key];
+    const v = verifyLibraryInjection(platformId, x.key, h ? h.contentHash : undefined);
+    return {
+      ...x,
+      injectedAt: h ? h.at : (x.updatedAt || null),
+      verify: { exists: v.exists, hashMatch: v.hashMatch, verdict: v.verdict, breakActive: v.breakActive }
+    };
+  });
+  let breakActive = null;
+  try { breakActive = verifyBreak(platformId).active; } catch { breakActive = null; }
+  return { ok: true, platformId, mode: scan.mode, path: scan.path, exists: scan.exists, items, breakActive };
+}
+
+/** 列出一个平台当前生效的注入块（以磁盘实际内容为准，不依赖 state） */
+function listLibraryInjections(platformId) {
+  const target = RULE_FILE_TARGETS[platformId];
+  if (!target) return { ok: false, error: `${platformId} 不支持`, items: [] };
+  const items = [];
+  try {
+    if (target.mode === 'copy') {
+      const dir = target.dir();
+      let files = [];
+      try { files = fs.readdirSync(dir).filter((n) => /^shiyi-imported-.*\.mdc$/i.test(n)); } catch { return { ok: true, platformId, mode: 'copy', path: dir, exists: false, items }; }
+      for (const n of files) {
+        const p = path.join(dir, n);
+        let st = null;
+        try { st = fs.statSync(p); } catch { continue; }
+        const key = n.replace(/^shiyi-imported-/, '').replace(/\.mdc$/i, '');
+        let title = key;
+        try {
+          const head = fs.readFileSync(p, 'utf8').slice(0, 400);
+          const m = head.match(/description:\s*破甲词库注入\s*·\s*(.+)/);
+          if (m) title = m[1].trim();
+        } catch { /* 读不到就用 key */ }
+        items.push({ key, title, dest: p, bytes: st.size, updatedAt: st.mtime.toISOString(), fromLibrary: key.startsWith('lib') });
+      }
+      return { ok: true, platformId, mode: 'copy', path: dir, exists: true, items };
+    }
+
+    const file = target.file();
+    if (!existsFileSync(file)) return { ok: true, platformId, mode: 'append', path: file, exists: false, items };
+    const text = fs.readFileSync(file, 'utf8');
+    const re = /<!--\s*shiyi-imported:([^:>]+):start\s*-->([\s\S]*?)<!--\s*shiyi-imported:\1:end\s*-->/g;
+    let m;
+    while ((m = re.exec(text)) !== null) {
+      const key = m[1].trim();
+      const body = m[2] || '';
+      const title = key.startsWith('lib') ? key.replace(/^lib\d+_/, '').replace(/_/g, ' ') : key;
+      items.push({
+        key,
+        title,
+        dest: file,
+        bytes: Buffer.byteLength(body, 'utf8'),
+        chars: body.length,
+        fromLibrary: key.startsWith('lib'),
+        index: key.startsWith('lib') ? Number(key.match(/^lib(\d+)_/)?.[1] ?? -1) : -1
+      });
+    }
+    return { ok: true, platformId, mode: 'append', path: file, exists: true, items };
+  } catch (e) {
+    return { ok: false, error: e.message, platformId, items };
+  }
+}
+
+/**
+ * 卸载一个注入块。
+ *   append：按 key 精准摘除标记块（其余内容一个字不动）
+ *   copy：把 .mdc 挪进备份目录后删除（不直接 rm，可回滚）
+ */
+async function removeLibraryInjection(platformId, key, opts = {}) {
+  const target = RULE_FILE_TARGETS[platformId];
+  if (!target) throw new Error(`${platformId} 不支持`);
+  const k = String(key || '').trim();
+  if (!k) throw new Error('key 为空');
+
+  if (target.mode === 'copy') {
+    const dir = target.dir();
+    const file = path.join(dir, `shiyi-imported-${k}.mdc`);
+    if (!existsFileSync(file)) return { ok: false, error: '文件已不存在（可能已被手动删除）', dest: file };
+    if (opts.backupDir) {
+      try {
+        await fsp.mkdir(opts.backupDir, { recursive: true });
+        await fsp.copyFile(file, path.join(opts.backupDir, `${platformId}-removed-${libStamp()}-${path.basename(file)}`));
+      } catch { /* best-effort */ }
+    }
+    await fsp.rm(file, { force: true });
+    return { ok: true, mode: 'copy', dest: file, removed: 1 };
+  }
+
+  const file = target.file();
+  if (!existsFileSync(file)) return { ok: false, error: '目标文件不存在', dest: file };
+  const prev = await fsp.readFile(file, 'utf8');
+  const r = stripInjectionBlock(prev, k);
+  if (!r.removed) return { ok: false, error: `没找到标记块 ${k}（可能已被手动改过）`, dest: file };
+  if (opts.backupDir) {
+    try {
+      await fsp.mkdir(opts.backupDir, { recursive: true });
+      await fsp.copyFile(file, path.join(opts.backupDir, `${platformId}-before-remove-${libStamp()}-${path.basename(file)}`));
+    } catch { /* best-effort */ }
+  }
+  await fsp.writeFile(file, r.text, 'utf8');
+  return { ok: true, mode: 'append', dest: file, removed: 1, bytesBefore: Buffer.byteLength(prev, 'utf8'), bytesAfter: Buffer.byteLength(r.text, 'utf8') };
 }
 
 module.exports = {
@@ -1752,7 +2772,10 @@ module.exports = {
   CONFIG_CHECKS,
   analyzeReply,
   findCodexCli,
+  findCodexCliInfo,
   findGuiExe,
+  probeRuntime,
+  runningExeName,
   L4_CHANNELS,
   SKIP_DIRS,
   MAX_CHANGE_ITEMS,
@@ -1783,9 +2806,25 @@ module.exports = {
   buildImportBlock,
   IMPORT_SCORE_THRESHOLD,
   TEXT_EXTS,
+  // 词库 v2
+  loadLibraryRaw,
   loadBuiltinLibrary,
+  libraryMeta,
+  libraryStats,
+  libraryPlatformTargets,
   fetchBuiltinDetail,
   fetchBuiltinDetailRemote,
+  resolveLibraryContent,
   importLibraryContent,
+  listLibraryInjections,
+  removeLibraryInjection,
+  verifyLibraryInjection,
+  verifyLibraryPlatform,
+  injectionKey,
+  buildInjectionBlock,
+  scanInjectionKeys,
+  stripInjectionBlock,
+  toLibraryMeta,
+  LIBRARY_PREVIEW_CHARS,
   builtinLibraryDir
 };

@@ -1,4 +1,4 @@
-import type { BaselineResult } from '../types';
+import type { BaselineResult } from './types';
 
 export function formatBytes(n: number): string {
   if (!Number.isFinite(n) || n < 0) return '—';
