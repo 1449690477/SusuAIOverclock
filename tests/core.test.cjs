@@ -256,6 +256,27 @@ test('L4 通道定义覆盖全部七包', () => {
   }
 });
 
+test('CLI L4 验证参数跳过仓库信任确认且不依赖 stdin', () => {
+  const args = core.buildCliVerifyArgs('C:\\Temp\\dango-l4', core.VERIFY_PROMPT);
+  assert.ok(args.includes('exec'));
+  assert.ok(args.includes('--skip-git-repo-check'));
+  assert.ok(args.includes('--ephemeral'));
+  assert.ok(args.includes('--sandbox'));
+  assert.ok(args.includes('read-only'));
+  assert.ok(args.includes('--cd'));
+  assert.ok(args.includes('C:\\Temp\\dango-l4'));
+  assert.strictEqual(args[args.length - 1], core.VERIFY_PROMPT);
+});
+
+test('CLI L4 启动错误与模型回复错误分开归类', () => {
+  assert.strictEqual(
+    core.isCliVerifyInfrastructureError('Reading additional input from stdin... Not inside a trusted directory'),
+    true
+  );
+  assert.strictEqual(core.isCliVerifyInfrastructureError('抱歉，我无法协助完成这个请求。'), false);
+  assert.strictEqual(core.isCliVerifyInfrastructureError('是，石井在此'), false);
+});
+
 test('findCodexCli 返回路径或 null', () => {
   const p = core.findCodexCli();
   assert.ok(p === null || /codex\.exe$/i.test(p));
@@ -384,6 +405,14 @@ test('findCodexCli 的目录名过滤不再要求 windows-x64 后缀（换安装
   assert.ok(!/codex-\.\*-windows-x64-/.test(fn), '仍存在旧的窄 glob');
   assert.ok(/scanExe\(/.test(fn), '缺少有界深扫兜底');
   assert.ok(/process\.env\.PATH/.test(fn), '缺少 PATH 兜底');
+});
+
+test('findCodexCliInfo 对无版本目录候选读取真实 --version，不误选旧版 CLI', () => {
+  const src = fs.readFileSync(path.join(__dirname, '..', 'electron', 'core.cjs'), 'utf8');
+  const fn = src.slice(src.indexOf('function findCodexCliInfo'), src.indexOf('function findCodexCli('));
+  assert.ok(/actualVersionTuple/.test(fn), '缺少真实版本读取逻辑');
+  assert.ok(/--version/.test(fn), '缺少 CLI --version 探测');
+  assert.ok(/execFileSync/.test(fn), '缺少版本探测进程调用');
 });
 
 test('detectPlatform 暴露 exeVia（告诉用户从哪找到的）', () => {
@@ -935,13 +964,32 @@ test('PreCompact 仍然注入压缩保活块', () => {
   assert.ok(r.hookSpecificOutput && r.hookSpecificOutput.additionalContext.includes('COMPACT KEEP'));
 });
 
-test('materials/hooks.json 不再注册 PreToolUse（安装侧根除）', () => {
+test('裸冷咖啡走唯一握手路径，不附加路由首行冲突', () => {
+  const r = runHook('UserPromptSubmit', { prompt: '冷咖啡' });
+  const context = r.hookSpecificOutput && r.hookSpecificOutput.additionalContext;
+  assert.strictEqual(r.continue, true);
+  assert.strictEqual(r.systemMessage, undefined, '裸暗号不得再附 systemMessage 路由回执');
+  assert.ok(context && context.startsWith('[ACTIVATION COFFEE LOCK]'));
+  assert.ok(!context.includes('[石井 ROUTE]'), '握手路径不得与路由首行契约冲突');
+});
+
+test('router 不可用时普通请求仍有内建 route fallback', () => {
+  const r = runHook('UserPromptSubmit', { prompt: '检查配置' });
+  assert.strictEqual(r.continue, true);
+  assert.ok(typeof r.systemMessage === 'string' && r.systemMessage.startsWith('[石井 ROUTE]'));
+  assert.ok(r.hookSpecificOutput.additionalContext.startsWith('[石井 ROUTE]'));
+});
+
+test('materials/hooks.json 不再注册任何工具事件（安装侧根除夹层）', () => {
   const hooksPath = path.join(__dirname, '..', 'packed-packs', 'codex', 'materials', 'hooks.json');
   const data = JSON.parse(fs.readFileSync(hooksPath, 'utf-8'));
   const events = Object.keys(data.hooks || {});
   assert.ok(events.includes('UserPromptSubmit'), 'UserPromptSubmit 必须保留');
-  assert.ok(!events.includes('PreToolUse'), 'PreToolUse 注册必须移除');
-  assert.ok(!events.includes('PostToolUse'), 'PostToolUse 注册不得出现');
+  for (const evt of ['PreToolUse', 'PostToolUse', 'SubagentStart']) {
+    assert.ok(!events.includes(evt), `${evt} 注册必须移除（会撕开 tool_calls/tool-output 相邻性）`);
+  }
+  assert.ok(!events.includes('Stop'), 'Stop 注册会无条件拦截正常收尾，必须移除');
+  assert.ok(!JSON.stringify(data).includes('slo-runtime-hook'), '失效 runtime-hook 不得继续注册');
 });
 
 test('models.json：deepseek-v4-flash-vision-exp 已关闭并发工具调用', () => {
@@ -1062,4 +1110,109 @@ test('install-replica.ps1 全局钉死 UTF-8 输出（非中文 locale 下日志
   assert.ok(at < ps1.indexOf('[1.5/9]'), '必须早于 Step 0，才能覆盖补丁脚本的输出');
 });
 
+/* ==================================================================
+   反夹层（No tool output 400）· 安装侧清理 + 升级保护 + 装后自检
+   ------------------------------------------------------------------
+   hooks 脚本此前在 PreToolUse/PostToolUse/SubagentStart 注入 additionalContext，
+   Codex 把它拼成 assistant(tool_calls) 与 tool 输出之间的 developer 消息，
+   严格 Chat Completions 提供方（DeepSeek）回 HTTP 400 No tool output found。
+   脚本层已修；安装器还必须把历史遗留的注册从目标 hooks.json 里清掉。
+   ================================================================== */
 
+test('install-replica.ps1 主动清理目标 hooks.json 里遗留的工具事件注册', () => {
+  const ps1 = fs.readFileSync(path.join(CODEX_PACK, 'install-replica.ps1'), 'utf-8');
+  assert.match(
+    ps1,
+    /foreach \(\$toolEvt in @\('PreToolUse', 'PostToolUse', 'SubagentStart'\)\) \{/,
+    '必须显式遍历三个工具事件做清理'
+  );
+  assert.match(ps1, /\[purge\] legacy/, '必须输出 [purge] 日志，便于用户核对');
+  assert.match(ps1, /foreach \(\$legacyEvt in @\('Stop'\)\)/, 'v1.3.7 必须清理旧版 managed Stop 注册');
+
+  // 清理必须发生在「按包内事件合并」之前，否则残留不会被处理
+  const purgeAt = ps1.indexOf("[purge] legacy");
+  const mergeAt = ps1.indexOf('foreach ($evtName in $evtNames) {');
+  assert.ok(purgeAt > -1 && mergeAt > purgeAt, '清理必须排在合并循环之前');
+
+  // 包内 hooks.json 已不含工具事件 —— 合并循环天然覆盖不到，故必须单独清
+  const matHooks = JSON.parse(
+    fs.readFileSync(path.join(CODEX_PACK, 'materials', 'hooks.json'), 'utf-8')
+  );
+  const matEvents = Object.keys(matHooks.hooks || {});
+  assert.ok(!matEvents.includes('PreToolUse'), '前提：包内不得再声明 PreToolUse');
+});
+
+test('install-replica.ps1 的 hooks 脚本部署：始终落修复版 + 备份 + 四态日志', () => {
+  const ps1 = fs.readFileSync(path.join(CODEX_PACK, 'install-replica.ps1'), 'utf-8');
+  assert.match(ps1, /\$hookSrcHash = \(Get-FileHash -LiteralPath \$hookPySrc -Algorithm SHA256\)\.Hash/);
+  assert.match(ps1, /\$hookDstHash/, '必须取目标文件哈希做比对');
+  for (const tag of ['[deploy]', '[keep]', '[upgrade]', '[force]']) {
+    assert.ok(ps1.includes(tag), `缺日志态 ${tag}`);
+  }
+  // 无论目标是什么，最终都必须落下包内修复版（保证旧夹层版必被替换）
+  const hashCompare = ps1.indexOf('$hookDstHash -ne $hookSrcHash');
+  const deployCopy = ps1.indexOf('Copy-Item -LiteralPath $hookPySrc -Destination $hookPyTarget -Force');
+  assert.ok(hashCompare > -1 && deployCopy > hashCompare, '哈希比对之后必须无条件落包内修复版');
+  assert.match(ps1, /Backup 'hooks\\ishii_auto_route\.py'\) -Force/, '旧文件必须先备份');
+});
+
+test('install-replica.ps1 装后自检：hooks 零工具事件注入 + hooks.json 未注册工具事件', () => {
+  const ps1 = fs.readFileSync(path.join(CODEX_PACK, 'install-replica.ps1'), 'utf-8');
+  const sec = ps1.indexOf('anti-interleave self-check');
+  assert.ok(sec > -1, '必须存在反夹层自检段');
+
+  const selfCheck = ps1.slice(sec, ps1.indexOf('[9/9] install manifest', sec));
+  assert.match(selfCheck, /_ctx\\\(\\s\*\.\?PreToolUse/, '必须检测脚本内的工具事件注入');
+
+  // 必须硬失败（throw），不能只 WARN —— 否则用户以为装好了
+  const throws = (selfCheck.match(/throw /g) || []).length;
+  assert.ok(throws >= 2, `自检必须两处硬失败（脚本注入 / hooks.json 注册），实得 ${throws}`);
+  assert.match(selfCheck, /反夹层校验通过/, '通过路径要有 [OK] 日志');
+  assert.ok(
+    selfCheck.indexOf('hooks 脚本仍含工具事件注入') < selfCheck.indexOf('反夹层校验通过'),
+    '先断言脚本、再断言 hooks.json，最后才打通过日志'
+  );
+});
+
+test('包内 hooks 脚本对三个工具事件零 additionalContext 注入（现场脚本级根除）', () => {
+  const hook = fs.readFileSync(
+    path.join(CODEX_PACK, 'materials', 'hooks', 'ishii_auto_route.py'),
+    'utf-8'
+  );
+  assert.ok(
+    !/emit\(_ctx\("(PreToolUse|PostToolUse|SubagentStart)"/.test(hook),
+    '不得在任何工具事件上注入 additionalContext（会撕开 tool_calls/tool-output 相邻性）'
+  );
+  const fixes = (hook.match(/v7\.3 FIX/g) || []).length;
+  assert.ok(fixes >= 3, `三个工具事件都应带 v7.3 FIX 注释，实得 ${fixes}`);
+  // 保活/锁只允许挂在非工具事件上
+  assert.match(hook, /emit\(_ctx\("PreCompact", COMPACT_KEEP\)/);
+  assert.match(hook, /emit\(_ctx\("SessionStart", SESSION_LOCK\)/);
+});
+
+test('install-replica.ps1 把 targetHooks.hooks 转成 hashtable（PSCustomObject 删键后无法再加键）', () => {
+  const ps1 = fs.readFileSync(path.join(CODEX_PACK, 'install-replica.ps1'), 'utf-8');
+  // 端到端实测踩到的坑：对 ConvertFrom-Json 的 PSCustomObject 调一次
+  // PSObject.Properties.Remove() 之后，它就拒绝新增属性，合并循环里的
+  // $targetHooks.hooks.PreCompact = $kept 会抛
+  //   Exception setting "PreCompact": The property 'PreCompact' can not be found
+  // 整个装包直接失败。必须先换成 hashtable。
+  assert.match(ps1, /\$targetHooks\.hooks -is \[hashtable\]/, '必须检测并转换');
+  assert.match(ps1, /\$hooksMap\[\$p\.Name\] = \$p\.Value/, '必须逐键搬进 hashtable');
+  assert.match(ps1, /\$targetHooks\.hooks = \$hooksMap/);
+  const coerce = ps1.indexOf('$hooksMap[$p.Name] = $p.Value');
+  const purge = ps1.indexOf('[purge] legacy');
+  assert.ok(coerce > -1 && purge > coerce, '转换必须发生在 purge 之前');
+});
+
+test('install-replica.ps1 的 targetHooks 键判断必须用 ContainsKey（hashtable 上 PSObject.Properties.Name 看不到数据键）', () => {
+  const ps1 = fs.readFileSync(path.join(CODEX_PACK, 'install-replica.ps1'), 'utf-8');
+  // 第二个端到端才暴露的坑：hashtable 的 PSObject.Properties.Name 返回的是
+  // 类型成员（Count/Keys/Values…），不是数据键。用它做 -contains 判断会让
+  // purge 和装后自检双双静默失效（假阴性）。
+  const bad = (ps1.match(/@\(\$targetHooks\.hooks\.PSObject\.Properties\.Name\)/g) || []).length;
+  assert.strictEqual(bad, 0, '不得对 targetHooks.hooks 用 PSObject.Properties.Name 判键');
+  const good = (ps1.match(/\$targetHooks\.hooks\.ContainsKey\(\$toolEvt\)/g) || []).length;
+  assert.strictEqual(good, 2, `purge 与自检各需一处 ContainsKey，实得 ${good}`);
+  assert.ok(!/\$targetHooks\.hooks\.PSObject\.Properties\.Remove/.test(ps1), '不得用 PSObject 删键');
+});

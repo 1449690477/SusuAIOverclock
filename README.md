@@ -2,14 +2,14 @@
 
 # 苏苏 AI超频 · Susu AI Overclock
 
-**六大 AI 工具包统一部署台 · 四层穿透验证 · 模型会话超频监控**
+**七大 AI 工具包统一部署台 · 四层穿透验证 · 模型会话超频监控**
 
 Windows x64 桌面端 · Electron 33 + React 18 + TypeScript 5 · 免安装单文件便携版
 
 [![Platform](https://img.shields.io/badge/platform-Windows%20x64-0078D4?style=flat-square)](https://github.com/1449690477/SusuAIOverclock/releases)
 [![Electron](https://img.shields.io/badge/Electron-33-47848F?style=flat-square&logo=electron&logoColor=white)](https://www.electronjs.org/)
 [![React](https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react&logoColor=black)](https://react.dev/)
-[![Version](https://img.shields.io/badge/version-1.3.5-2ea44f?style=flat-square)](https://github.com/1449690477/SusuAIOverclock/releases)
+[![Version](https://img.shields.io/badge/version-1.4.0-2ea44f?style=flat-square)](https://github.com/1449690477/SusuAIOverclock/releases)
 [![License](https://img.shields.io/badge/license-MIT-97CA00?style=flat-square)](./LICENSE)
 
 </div>
@@ -29,7 +29,7 @@ Windows x64 桌面端 · Electron 33 + React 18 + TypeScript 5 · 免安装单�
 
 ## 这是什么
 
-一个 Windows 桌面工作台，把散落各处的 **6 个 AI 客户端工具包**收进一个界面统一管理：
+一个 Windows 桌面工作台，把散落各处的 **7 个 AI 客户端工具包**收进一个界面统一管理：
 
 `codex` · `cursor` · `dsh` · `opencode` · `workbuddy` · `anti-gravity`
 
@@ -97,13 +97,13 @@ Windows x64 桌面端 · Electron 33 + React 18 + TypeScript 5 · 免安装单�
 
 ### 方式一：下载便携版（推荐）
 
-从 [Releases](https://github.com/1449690477/SusuAIOverclock/releases) 下载 `SusuAIOverclock-1.3.5-portable.exe`，双击即用，免安装。
+从 [Releases](https://github.com/1449690477/SusuAIOverclock/releases) 下载 `SusuAIOverclock-1.4.0-portable.exe`，双击即用，免安装。
 
 > 首次运行 Windows 会弹「已保护你的电脑」——点 **更多信息 → 仍要运行**。原因是没有代码签名证书，不是软件有问题。
 
 **启动速度**：第一次启动约 6 秒（需解压到本地缓存），之后每次约 0.8 秒。
 
-缓存目录 `%LOCALAPPDATA%\SusuAIOverclock-cache\1.3.5`，约 766 MB。删掉它下次会重新走一次冷启动，其余无副作用。
+缓存目录 `%LOCALAPPDATA%\SusuAIOverclock-cache\1.4.0`，约 766 MB。删掉它下次会重新走一次冷启动，其余无副作用。
 
 ### 方式二：从源码构建
 
@@ -124,11 +124,11 @@ npm run pack:portable  # 产出 release/SusuAIOverclock-<version>-portable.exe
 
 ```bat
 :: 直接指定根目录，跳过对话框
-SusuAIOverclock-1.3.5-portable.exe --root "C:\path\to\packs"
+SusuAIOverclock-1.4.0-portable.exe --root "C:\path\to\packs"
 
 :: 受限环境（终端 / CI 自动化）放宽 Chromium 沙箱
 set DANGO_NO_SANDBOX=1
-SusuAIOverclock-1.3.5-portable.exe
+SusuAIOverclock-1.4.0-portable.exe
 ```
 
 ---

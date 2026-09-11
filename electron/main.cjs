@@ -172,7 +172,11 @@ function spawnOnce(cmd, args, opts = {}) {
       argv = ['/d', '/s', '/c', cmd, ...args];
     }
     try {
-      child = spawn(file, argv, { cwd: opts.cwd, env, windowsHide: true });
+      const spawnOptions = { cwd: opts.cwd, env, windowsHide: true };
+      // CLI L4 验证使用命令行 prompt，不允许 Codex 把继承到的 stdin
+      // 当成“额外输入”再次读取；保持 stdout/stderr 可采集。
+      if (opts.stdin === 'ignore') spawnOptions.stdio = ['ignore', 'pipe', 'pipe'];
+      child = spawn(file, argv, spawnOptions);
     } catch (e) {
       resolve({ code: -1, stdout, stderr: String(e.message || e) });
       return;
@@ -369,10 +373,27 @@ async function runDeepVerify(id) {
       return result;
     }
     // eslint-disable-next-line no-await-in-loop
-    const r = await spawnOnce(exe, ['exec', '-c', 'approval_policy=never', '-c', 'sandbox_mode=read-only', core.VERIFY_PROMPT], {
+    const verifyCwd = os.tmpdir();
+    const r = await spawnOnce(exe, core.buildCliVerifyArgs(verifyCwd, core.VERIFY_PROMPT), {
+      cwd: verifyCwd,
+      stdin: 'ignore',
       timeout: 120000
     });
     const raw = `${r.stdout}\n${r.stderr}`.trim();
+    if (r.code !== 0 && core.isCliVerifyInfrastructureError(raw)) {
+      const detail = raw.slice(0, 400);
+      layers.push({
+        layer: 'L4',
+        name: '会话层',
+        ok: false,
+        label: 'CLI 验证通道被启动参数拦截',
+        detail
+      });
+      result.failAt = 'L4';
+      result.reply = detail;
+      result.layers = layers;
+      return result;
+    }
     // 配置语义错误（如 models.json 枚举）会在这层暴露，归因回 L2
     if (r.code !== 0 && /failed to parse|models\.json|config\.toml|unknown variant/i.test(raw)) {
       layers.push({ layer: 'L4', name: '会话层', ok: false, label: '会话建立失败（配置解析报错）', detail: raw.slice(0, 400) });

@@ -11,7 +11,8 @@ import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const appDir = path.resolve(here, '..');
-const unpacked = path.join(appDir, 'release', 'win-unpacked');
+const releaseDir = path.resolve(appDir, process.env.DANGO_RELEASE_DIR || 'release');
+const unpacked = path.join(releaseDir, 'win-unpacked');
 
 if (!fs.existsSync(unpacked)) {
   console.error('找不到 release/win-unpacked');
@@ -60,16 +61,16 @@ const win = await app.firstWindow();
 await win.waitForLoadState('domcontentloaded');
 await win.locator('[data-testid="pack-grid"]').waitFor({ timeout: 40000 });
 
-console.log('\n=== 打包产物：内嵌六卡 ===');
+console.log('\n=== 打包产物：内嵌七卡 ===');
 const n = await win.locator('[data-testid^="pack-card-"]').count();
-check('六卡呈现', n === 6, `实际 ${n}`);
+check('七卡呈现', n === 7, `实际 ${n}`);
 
 console.log('\n=== 打包产物：导入弹窗两个按钮 ===');
 await win.locator('[data-testid="open-import"]').click();
 await win.locator('[data-testid="import-modal"]').waitFor({ timeout: 8000 });
 check('「选择单个规则文件」按钮存在', (await win.locator('[data-testid="import-choose-file"]').count()) > 0);
 check('「选择包目录」按钮存在', (await win.locator('[data-testid="import-choose-dir"]').count()) > 0);
-await win.screenshot({ path: path.join(appDir, 'release', 'shot-packed-import.png') });
+await win.screenshot({ path: path.join(releaseDir, 'shot-packed-import.png') });
 
 console.log('\n=== 打包产物：单文件识别 ===');
 const det = await win.evaluate((p) => window.dango.analyzeImport(p), ruleFile);

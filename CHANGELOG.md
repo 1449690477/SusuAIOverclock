@@ -4,6 +4,123 @@
 
 ---
 
+## [1.4.0] — 2026-09-11
+
+### DSH v5.7.0 同步
+
+- 同步 DSH v5.7.0 完整包：中性化 GLM5.3 拒答触发器、profile patch 自愈、启动日志探活、dsh-shield 52 项双侧冒烟护栏。
+- 同步 `VERSION`、`SHA256SUMS.txt`、`SHA256SUMS.json`，源包 2101 个 payload 文件校验全部一致。
+- DSH 卡片版本读取改为优先读取 `VERSION`，显示 `5.7.0`，不再从旧安装器首行误读成 `5`。
+- 保留 DSH 原有 `gui-note` 通道语义：DSH 无独立 CLI 时 L3 降级通过，L4 自动跳过，不再误报会话失败。
+- 应用版本升至 `1.4.0`。
+
+---
+
+## [1.3.8] — 2026-09-11
+
+### WorkBuddy v4.0 中性契约包同步
+
+- 修复深度验证 L4：CLI 验证固定临时工作目录，跳过 Git 信任确认，禁用 stdin 额外输入，并按真实 `--version` 选择最新 Codex CLI，避免旧版 CLI 误读新 `models.json`。
+- 同步 WorkBuddy v4.0 的 IDENTITY / MEMORY / SOUL / bridge 内容，同时保留内嵌包 v1.1 已验证的全树模板清理和缓存清理能力。
+- 安装器支持 `WB_HOME` / `WORKBUDDY_HOME` / `-WBHomePath`，修复 v2→v3 升级、SOUL 摘要升级和技能目录重复嵌套。
+- 移除桥接服务中的硬编码 API Key；无 `Authorization` 或 `OMEN_KEY` 时显式返回 401。
+- Omen 启动脚本改为相对路径定位，移除开发机绝对路径依赖；BAT 透传真实退出码。
+- 不把 `backups/`、`__pycache__` 和 `.pyc` 打进发布资源。
+
+---
+
+## [1.3.7] — 2026-09-11
+
+### 内嵌 Codex 包同步 v9.4
+
+- 同步独立 Codex v9.4 的激活握手短路和路由故障 fallback，消除裸暗号与路由首行约束的冲突。
+- `materials/hooks.json` 收敛为 `UserPromptSubmit`、`PreCompact`、`SessionStart` 三个有效事件，移除失效 runtime hook、Stop 和工具边界注册。
+- 安装器保留 v1.3.6 的 Hashtable 转换、历史工具事件清理、用户 hook 保留和装后反夹层硬自检；新增已知 hook 哈希自动升级与未知版本保护。
+- 保留 `deepseek-v4-flash-vision-exp` 的 `supports_parallel_tool_calls: false`，避免把已修复的工具交织问题重新打开。
+- Desktop 包版本升至 `1.3.7`，Codex 卡片版本读取优先显示 README 的 `v9.4`。
+
+### 校验
+
+- 独立 v9.4 ZIP：`F4753DAE42FE9124A97C398CDF78EBA5DB11686DA9F6408D34ADB869A2F50145`
+- 内嵌 hook：`C18FE139D9B594E40BFFE26B9CA0CF53BE5C3EA996CD8B5D1D9D5F1D6947B7D6`
+- `SusuAIOverclock-1.3.7-portable.exe`：`D5BF14800E2EB8AEC7B5D93E3554F5FE359DE2A9359F819198BA9BBECA8EB62E`
+- 版本：`1.3.7`
+
+---
+
+## [1.3.6] — 2026-09-11
+
+### 结论先行
+
+独立包 v9.2（「反夹层 hooks 修复 + 安装器升级保护」）的改动，**软件内嵌 codex 包只需要同步其中一件**，
+其余三项一旦同步就是**回退**。以下逐项核过：
+
+| 独立包 v9.2 的改动 | 软件包现状 | 该不该同步 |
+| --- | --- | --- |
+| `materials/hooks/ishii_auto_route.py` 换「修复版」`83c0f53e…` | 包内是 `248ef68e…`，**三个工具事件全部纯放行** | ❌ 不同步，同步即回退 |
+| `materials/hooks.json` 重新加回 `PreToolUse` | 软件包已移除该注册 | ❌ 不同步，同步即回退 |
+| `materials/models.json` `deepseek-v4-flash-vision-exp` 并发 | 软件包已是 `supports_parallel_tool_calls: false` | ❌ 不同步，同步即回退 |
+| 安装器 hooks 部署的「哈希三态升级保护」 | 软件包仍是**无条件覆盖** | ✅ 同步（并做得更稳，见下） |
+
+`83c0f53e…` 只把 `PreToolUse` / `PostToolUse` 改成了放行，**`SubagentStart` 仍写着
+`emit(_ctx("SubagentStart", TOOL_LOCK))`**。独立包之所以没炸，只是因为它的 `hooks.json` 恰好没注册
+`SubagentStart` —— 那是颗定时炸弹。软件包这份 `248ef68e…` 是三个工具事件全部放行的彻底版。
+
+### 修复
+
+- **内嵌 codex 包：安装器主动清理历史遗留的工具事件注册**
+  - 合并逻辑只遍历**包内 hooks.json 声明过的事件**，而包内早已不声明 `PreToolUse`。
+    结果是老用户 `~/.codex/hooks.json` 里从前几版留下的 `PreToolUse` / `SubagentStart` 条目
+    **永远清不掉** —— 脚本换新了，注册却还挂着。
+  - 现在 `[4/9]` 段显式遍历 `PreToolUse` / `PostToolUse` / `SubagentStart`，只摘掉 `ishii_auto_route` /
+    `slo-runtime-hook` 的条目，**用户自己的 hook 原样保留**，并逐条打日志：
+    ```
+    [purge] legacy PreToolUse registration removed (anti-interleave)
+    [purge] PostToolUse: removed 1 kit entr(ies), kept 1 user entr(ies)
+    ```
+- **内嵌 codex 包：hooks 脚本部署改「始终落修复版 + 备份 + 四态日志」**
+  - 语义上仍是**无条件覆盖**（对「绝不能出问题」来说，保证旧夹层版必被替换比「尊重用户自定义」更重要），
+    但补上了哈希比对与四态日志：`[deploy]` 不存在 · `[keep]` 已是最新 · `[upgrade]` 旧版被替换 ·
+    `[force]` 指定强制。被替换的旧文件一律先备份到 `Backup\hooks\ishii_auto_route.py`。
+- **内嵌 codex 包：装后反夹层硬自检**
+  - `[9/9]` 新增两条 `throw`（不是告警）：部署后的 `hooks/ishii_auto_route.py` 若含
+    `_ctx("PreToolUse"|"PostToolUse"|"SubagentStart"` 注入，或 `hooks.json` 的工具事件上仍挂着本 Kit 条目，
+    **直接判定装包失败**，不给用户「以为装好了」的机会。
+
+### 端到端实测抓到的两个真 bug（单元测试看不见）
+
+沙盒里模拟「老用户升级」（hooks.json 有工具事件残留 + hooks 脚本是夹层版）跑真实安装器，连踩两坑：
+
+1. **`ConvertFrom-Json` 的 PSCustomObject 删过一次键就拒绝再加键。**
+   `[purge]` 用 `PSObject.Properties.Remove()` 摘掉工具事件后，合并循环里的
+   `$targetHooks.hooks.PreCompact = $kept` 直接抛
+   `Exception setting "PreCompact": The property 'PreCompact' can not be found on this object`，
+   **整个装包失败**（比原来要修的 bug 还严重）。
+   修法：先把 `hooks` 转成普通 hashtable，增删都自由。
+2. **hashtable 的 `PSObject.Properties.Name` 看不到数据键。**
+   它返回的是类型成员（`Count`/`Keys`/`Values`…），于是 `-contains 'PreToolUse'` 恒为 false ——
+   `[purge]` 与装后自检**双双静默失效**（假阴性，日志里看着一切正常，实际残留原封不动）。
+   修法：改用原生 `ContainsKey()`。
+
+这两处都已沉淀成回归测试（对 `targetHooks.hooks` 不得使用 `PSObject.Properties.Name` / `.Remove`）。
+
+### 验证
+
+- 单元测试 **102/102** 通过（新增 6 条：清理顺序、四态日志、装后自检硬失败、包内脚本零注入、
+  hashtable 转换、`ContainsKey` 用法）。
+- `tsc --noEmit` 无错误；4 份 PowerShell 脚本 AST 解析全部 OK。
+- **三场景真实安装器端到端**（`-CodexHome` 指向沙盒）：
+
+  | 场景 | 结果 |
+  | --- | --- |
+  | 老用户升级（3 个工具事件残留 + 夹层版脚本） | `[purge]`×3 · `[upgrade]`/`[force]` · 自检通过 · 退出码 0 · 用户自定义 hook 保留 |
+  | 全新安装（无 hooks.json / 无 hooks 目录） | `[deploy]` · 自检通过 · 退出码 0 |
+  | 幂等重跑 | `[keep]` · 自检通过 · 退出码 0 |
+
+
+
+---
+
 ## [1.3.5] — 2026-09-10
 
 ### 修复

@@ -1,8 +1,8 @@
 {
   "name": "dango-desk",
-  "version": "1.3.5",
+  "version": "1.4.0",
   "private": true,
-  "description": "苏苏 AI超频 - 六大工具包统一管理与模型会话监控",
+  "description": "苏苏 AI超频 - 七大工具包统一管理与模型会话监控",
   "main": "electron/main.cjs",
   "author": "Wanghan",
   "license": "MIT",
@@ -61,7 +61,10 @@
         "from": "packed-packs",
         "to": "packs",
         "filter": [
-          "**/*"
+          "**/*",
+          "!**/backups/**",
+          "!**/__pycache__/**",
+          "!**/*.pyc"
         ]
       },
       {

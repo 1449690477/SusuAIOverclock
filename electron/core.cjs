@@ -32,10 +32,11 @@ const PACKS = [
     folder: 'codex',
     target: 'Codex CLI / 桌面端',
     accent: 'sakura',
-    note: 'v8：Astra6 粒度拆解 + 安装器误判「Codex 正在运行」修复；工具事件纯放行（DeepSeek 400 修复）已在包内保留。与胖虎互斥（胖虎会隔离 hooks.json）。',
+    note: 'v9.4：激活握手短路、路由故障兜底、hooks 最小化与安装器升级保护；保留串行工具调用和反夹层硬自检。与胖虎互斥（胖虎会隔离 hooks.json）。',
     expected: ['Install-OneClick.cmd', 'install-replica.ps1', 'check_codex.ps1', 'materials', 'README-CN.txt', 'Uninstall.ps1'],
     versionSources: [
-      { kind: 'firstLines', file: 'install-replica.ps1', maxLines: 60, pattern: 'v(\\d+\\.\\d+\\.\\d+)' },
+      { kind: 'firstLines', file: 'README-CN.txt', maxLines: 20, pattern: '【v(\\d+\\.\\d+(?:\\.\\d+)?)' },
+      { kind: 'firstLines', file: 'install-replica.ps1', maxLines: 80, pattern: 'v(\\d+\\.\\d+)' },
       { kind: 'firstLines', file: 'README-CN.txt', maxLines: 5, pattern: 'v(\\d+\\.\\d+(?:\\.\\d+)?)' }
     ]
   },
@@ -84,7 +85,7 @@ const PACKS = [
     folder: 'dsh',
     target: 'DeepSeek Harness',
     accent: 'yuzu',
-    note: '本轮已加强：shield 插件 order 提到 -200，压在身份声明之前。',
+    note: 'v5.7.0：GLM5.3 拒答触发器中性化、profile patch 自愈、启动日志探活与 52 项双侧冒烟护栏。',
     expected: [
       'install.bat',
       'install.ps1',
@@ -94,11 +95,15 @@ const PACKS = [
       'tools',
       'README-CN.txt',
       'MAINTENANCE-HANDOVER.md',
-      'Uninstall.cmd'
+      'Uninstall.cmd',
+      'VERSION',
+      'SHA256SUMS.txt',
+      'SHA256SUMS.json'
     ],
     versionSources: [
-      { kind: 'firstLines', file: 'install.ps1', maxLines: 10, pattern: 'v(\\d+)\\b' },
-      { kind: 'firstLines', file: 'README-CN.txt', maxLines: 5, pattern: 'v(\\d+)\\b' }
+      { kind: 'firstLines', file: 'VERSION', maxLines: 5, pattern: 'version=(\\d+\\.\\d+\\.\\d+)' },
+      { kind: 'firstLines', file: 'README-CN.txt', maxLines: 80, pattern: 'v(\\d+\\.\\d+\\.\\d+)' },
+      { kind: 'firstLines', file: 'install.ps1', maxLines: 10, pattern: 'v(\\d+)\\b' }
     ]
   },
   {
@@ -130,7 +135,7 @@ const PACKS = [
     folder: 'workbuddy',
     target: 'WorkBuddy 客户端',
     accent: 'soda',
-    note: 'v1.1：模板清理扩到 plugins 全树 + 插件缓存，根治升级后安全段漏网再生。',
+    note: 'v4.0：中性契约版 IDENTITY/MEMORY/SOUL；保留 v1.1 全树模板清理、缓存清理与升级备份。',
     expected: [
       'Install-OneClick.bat',
       'Install-WB-OneClick.ps1',
@@ -1307,6 +1312,38 @@ const VERIFY_PROMPT =
   '只回复一句：你是石井吗？是就回「是，石井在此」，不是就回「不是」。不要调用任何工具、不要读文件、不要执行命令。';
 
 /**
+ * 构造 CLI L4 验证参数。
+ *
+ * Codex exec 默认会校验当前目录是否为受信任 Git 仓库；桌面端主进程
+ * 的 cwd 可能落在 release 目录、项目目录或用户自定义目录，因此验证
+ * 会在没有 --skip-git-repo-check 时卡在 stdin 确认提示。L4 只需要一条
+ * 无副作用的问答，固定为临时目录 + 只读沙箱 + ephemeral 会话，并且
+ * 由调用方把 stdin 设为 ignore，避免 Codex 追加“额外 stdin 输入”。
+ */
+function buildCliVerifyArgs(cwd, prompt = VERIFY_PROMPT) {
+  return [
+    'exec',
+    '--skip-git-repo-check',
+    '--ephemeral',
+    '--color',
+    'never',
+    '--cd',
+    String(cwd || os.tmpdir()),
+    '-c',
+    'approval_policy=never',
+    '--sandbox',
+    'read-only',
+    String(prompt)
+  ];
+}
+
+function isCliVerifyInfrastructureError(text) {
+  return /not inside a trusted directory|skip-git-repo-check|reading additional input from stdin|failed to read.*stdin|stdin.*not.*trusted/i.test(
+    String(text || '')
+  );
+}
+
+/**
  * L2 配置层检查（per 平台）。
  * check 返回 { ok, detail } —— ok=false 即"配置层失败"。
  */
@@ -1523,6 +1560,25 @@ function findCodexCliInfo() {
     if (p && existsSyncPath(p) && !candidates.some((c) => c.path === p)) candidates.push({ path: p, via });
   };
 
+  const actualVersionCache = new Map();
+  const actualVersionTuple = (p) => {
+    const known = versionTuple(p);
+    if (known) return known;
+    if (actualVersionCache.has(p)) return actualVersionCache.get(p);
+    let tuple = null;
+    try {
+      const isCmd = /\.(cmd|bat)$/i.test(String(p));
+      const file = isCmd ? process.env.ComSpec || 'cmd.exe' : p;
+      const args = isCmd ? ['/d', '/s', '/c', p, '--version'] : ['--version'];
+      const out = execFileSync(file, args, { encoding: 'utf8', timeout: 8000, windowsHide: true, maxBuffer: 1 << 20 });
+      tuple = versionTuple(String(out));
+    } catch {
+      tuple = null;
+    }
+    actualVersionCache.set(p, tuple);
+    return tuple;
+  };
+
   // 1) %LOCALAPPDATA%\OpenAI\<版本目录>\cli-native\x86_64-pc-windows-msvc\bin\codex.exe
   const openaiDir = path.join(LOCALAPPDATA, 'OpenAI');
   for (const e of cachedReaddir(openaiDir)) {
@@ -1567,11 +1623,10 @@ function findCodexCliInfo() {
   push(scanExeWide(['codex.exe']), '常见安装根（深扫）');
 
   if (!candidates.length) return { path: null, via: null, candidates: [] };
-  const versioned = candidates.filter((c) => versionTuple(c.path));
-  const pool = versioned.length ? versioned : candidates;
+  const pool = candidates.slice();
   pool.sort((a, b) => {
-    const ta = versionTuple(a.path) || [0, 0, 0];
-    const tb = versionTuple(b.path) || [0, 0, 0];
+    const ta = actualVersionTuple(a.path) || [0, 0, 0];
+    const tb = actualVersionTuple(b.path) || [0, 0, 0];
     for (let i = 0; i < 3; i += 1) if (tb[i] !== ta[i]) return tb[i] - ta[i];
     return 0;
   });
@@ -2769,6 +2824,8 @@ module.exports = {
   checkEvidence,
   buildSpawn,
   VERIFY_PROMPT,
+  buildCliVerifyArgs,
+  isCliVerifyInfrastructureError,
   CONFIG_CHECKS,
   analyzeReply,
   findCodexCli,

@@ -1,3 +1,154 @@
+# v1.4.0 — DSH v5.7.0 同步
+
+## 同步内容
+
+- 同步 DSH v5.7.0 完整源包，包含 `VERSION`、双份 SHA-256 清单、v5.7 shield、prompt、技能和运行时自愈脚本。
+- DSH 源包校验清单：2101 个 payload 文件，0 缺失、0 哈希/大小不一致、0 未登记文件。
+- DSH 卡片版本改为读取 `VERSION`，显示 `5.7.0`。
+- 保持 DSH 无独立 CLI 的 `gui-note` 降级策略，避免把可验证的 L1/L2 结果误报为 L4 失败。
+- 应用版本升至 `1.4.0`。
+
+---
+
+# v1.3.8 — WorkBuddy v4.0 中性契约包同步
+
+## 同步内容
+
+- 修复深度验证 L4：CLI 验证固定临时工作目录、跳过 Git 信任确认、禁用 stdin 额外输入，并按真实 `--version` 选择最新 Codex CLI。
+- 内嵌 WorkBuddy 包更新为 v4.0 中性契约版的 `IDENTITY.md`、`MEMORY.md`、`SOUL-snippet.txt`、`README-CN.txt` 与桥接服务。
+- 保留桌面端已验证的 v1.1 全树模板清理、插件缓存/市场清理、模板备份与安装日志逻辑；没有直接覆盖回旧版清理能力。
+- WorkBuddy 安装器版本提取统一显示 v4.0，并补齐 v2→v3 协议升级、SOUL 摘要升级、技能目录替换和自定义 `WB_HOME` 支持。
+- 桥接服务不再内嵌 API Key；请求必须通过 `Authorization: Bearer ...` 或 `OMEN_KEY` 提供凭据，缺失时返回 401。
+- Omen 启动入口改为相对包目录定位，不再依赖开发机绝对路径；BAT 返回真实退出码。
+- 应用版本为 `1.3.8`。
+
+## 发布前校验
+
+- 不将源包 `backups/` 目录、`__pycache__` 或 `.pyc` 文件带入内嵌资源。
+- `packed-packs/workbuddy` 与 `release/win-unpacked/resources/packs/workbuddy` 关键文件哈希一致。
+- 发布目录扫描不到 `DEFAULT_KEY` 或硬编码 API Key。
+- `app.asar` 内 `package.json.version` 必须为 `1.3.8`（历史版本记录）。
+
+---
+
+# v1.3.7 — 内嵌 Codex 包同步 v9.4
+
+本版把独立包 `codex破 v9.4 (握手去冲突 + hooks最小化 + 路由兜底).zip` 同步进桌面端，
+但保留桌面端已经验证过的串行工具调用和安装后反夹层硬自检。
+
+## 同步内容
+
+- `materials/hooks/ishii_auto_route.py`
+  - 裸「冷咖啡」等激活词走独立握手路径，不再与路由首行约束冲突。
+  - router 缺失、超时、非零退出或坏 JSON 时使用内建 fallback route。
+  - L1/L2/L3 阶梯不再推进，工具事件继续保持纯放行。
+- `materials/hooks.json`
+  - 保留 `UserPromptSubmit`、`PreCompact`、`SessionStart`。
+  - 移除失效的 `slo-runtime-hook`、`Stop` 和工具边界注册，避免无效进程与协议夹层。
+- `install-replica.ps1`
+  - 保留 v1.3.6 的 Hashtable 转换、历史工具事件清理和安装后硬自检。
+  - 加入独立包 v9.4 及桌面端历史 hook 哈希的自动升级识别。
+  - 未知哈希默认保留本机自定义版本，`-Force` 才覆盖，并备份 `.preexisting`。
+- `materials/models.json`
+  - 继续固定 `deepseek-v4-flash-vision-exp` 的
+    `supports_parallel_tool_calls: false`，没有把并发工具调用回退打开。
+
+## 校验基线
+
+| 项目 | 结果 |
+| --- | --- |
+| 独立 v9.4 ZIP SHA-256 | `F4753DAE42FE9124A97C398CDF78EBA5DB11686DA9F6408D34ADB869A2F50145` |
+| 内嵌 hook SHA-256 | `C18FE139D9B594E40BFFE26B9CA0CF53BE5C3EA996CD8B5D1D9D5F1D6947B7D6` |
+| `SusuAIOverclock-1.3.7-portable.exe` SHA-256 | `D5BF14800E2EB8AEC7B5D93E3554F5FE359DE2A9359F819198BA9BBECA8EB62E` |
+| portable EXE 大小 | `146,151,732 bytes` |
+| 内嵌模型并发工具调用 | `false` |
+| 内嵌 hooks 事件 | `UserPromptSubmit`, `PreCompact`, `SessionStart` |
+| 发布版本 | `1.3.7` |
+
+安装动作仍由用户在桌面端点击后执行；同步资源本身不会修改本机 Codex 配置。
+
+---
+
+# v1.3.6 — 内嵌 codex 包补齐「反夹层」安装侧防线（并拦下一次回退）
+
+## 先回答那个问题
+
+> 「这次修复，软件里的 codex 包是不是要同步更新？」
+
+**四项里只有一项要同步，另外三项同步了就是回退。**
+
+独立包 v9.2 报告里说的「包内 `ishii_auto_route.py` 还是夹层元凶版」，
+指的是**独立 zip 自己的源包**，不是软件包。软件包这份从 v1.3.5 起就是
+**三个工具事件（PreToolUse / PostToolUse / SubagentStart）全部纯放行**的彻底版；
+v9.2 换上的 `83c0f53e…` 反而只改了两处 —— `SubagentStart` 那行仍是
+`emit(_ctx("SubagentStart", TOOL_LOCK))`，只是独立包的 `hooks.json` 恰好没注册这个事件，才没炸出来。
+
+| 独立包 v9.2 的改动 | 软件包现状 | 同步？ |
+| :-- | :-- | :-- |
+| hooks 脚本换 `83c0f53e…` | 包内 `248ef68e…`（三事件全放行） | ❌ 同步即回退 |
+| `hooks.json` 加回 `PreToolUse` | 已移除该注册 | ❌ 同步即回退 |
+| `models.json` 并发工具调用 | 已是 `false` | ❌ 同步即回退 |
+| 安装器 hooks 部署的升级保护 | 无条件覆盖 | ✅ **同步**（做得更稳） |
+
+## 补了什么
+
+**1. 历史遗留的工具事件注册，这次真的清掉了**
+
+合并逻辑只遍历「包内 `hooks.json` 声明过的事件」，而包内从 v1.3.5 起就不声明 `PreToolUse` 了。
+于是老用户 `~/.codex/hooks.json` 里前几版留下的 `PreToolUse` / `SubagentStart` 条目**永远清不掉** ——
+脚本换了新，注册还挂着。（v1.3.5 的发布说明里其实承诺过「重装自愈清 PreToolUse 遗留注册」，本版才真正兑现。）
+
+现在 `[4/9]` 段显式遍历三个工具事件，只摘 `ishii_auto_route` / `slo-runtime-hook` 条目，
+**用户自己的 hook 原样保留**，并逐条说明：
+
+```
+[purge] legacy PreToolUse registration removed (anti-interleave)
+[purge] PostToolUse: removed 1 kit entr(ies), kept 1 user entr(ies)
+[purge] legacy SubagentStart registration removed (anti-interleave)
+```
+
+**2. hooks 脚本部署：始终落修复版 + 备份 + 四态日志**
+
+语义仍是**无条件覆盖**（对「别人用了绝不能出问题」来说，保证旧夹层版必被替换，
+比「尊重用户自定义」更重要），但补上哈希比对与四态日志：
+`[deploy]` 不存在 · `[keep]` 已是最新 · `[upgrade]` 旧版被替换 · `[force]` 指定强制。
+被替换的旧文件一律先备份到 `Backup\hooks\ishii_auto_route.py`。
+
+**3. 装后反夹层硬自检**
+
+`[9/9]` 新增两条 `throw`（**不是告警**）：部署后的 `hooks/ishii_auto_route.py` 若仍含
+`_ctx("PreToolUse"|"PostToolUse"|"SubagentStart"` 注入，或 `hooks.json` 的工具事件上仍挂着本 Kit 条目，
+直接判定**装包失败** —— 不给用户「以为装好了」的机会。
+
+## 实测抓到的两个真 bug（单元测试看不见）
+
+在沙盒里模拟「老用户升级」（`hooks.json` 有工具事件残留 + hooks 脚本是夹层版）跑真实安装器，
+连踩两坑，都是**真正会打崩别人机器**的那种：
+
+1. **`ConvertFrom-Json` 的 PSCustomObject 删过一次键就拒绝再加键。**
+   `[purge]` 摘掉工具事件后，合并循环里的 `$targetHooks.hooks.PreCompact = $kept` 直接抛
+   `Exception setting "PreCompact": The property 'PreCompact' can not be found on this object`，
+   **整个装包失败**。修法：先把 `hooks` 转成普通 hashtable，增删自由。
+2. **hashtable 的 `PSObject.Properties.Name` 看不到数据键。**
+   它返回的是类型成员（`Count`/`Keys`/`Values`…），于是 `-contains 'PreToolUse'` 恒为 false ——
+   `[purge]` 和装后自检**双双静默失效**：日志里看着一切正常，实际残留原封不动。
+   修法：改用原生 `ContainsKey()`。
+
+两处都已沉淀成回归测试。
+
+## 验证
+
+- 单元测试 **102/102** 通过；`tsc --noEmit` 无错误；4 份 PowerShell 脚本 AST 解析全部 OK。
+- **三场景真实安装器端到端**（`-CodexHome` 指向沙盒）：
+
+  | 场景 | 结果 |
+  | :-- | :-- |
+  | 老用户升级（3 个工具事件残留 + 夹层版脚本） | `[purge]`×3 · 备份 + 覆盖修复版 · 自检通过 · 退出码 0 · 用户自定义 hook 保留 |
+  | 全新安装（无 `hooks.json` / 无 `hooks` 目录） | `[deploy]` · 自检通过 · 退出码 0 |
+  | 幂等重跑 | `[keep]` · 自检通过 · 退出码 0 |
+
+---
+
 # v1.3.5 — 内嵌 codex 包补上「命名空间报错」根治（软件安装路径不再漏修）
 
 ## 先回答那个要命的问题
@@ -176,7 +327,7 @@ models.json       与上一版逐文件一致       ✓
 
 | 文件 | 大小 | 说明 |
 | :-- | :-- | :-- |
-| `SusuAIOverclock-1.3.5-portable.exe` | ~140 MB | 免安装便携版，双击即用，**已内嵌七个工具包（Codex v9 Astra6 + 命名空间修复 + Cursor v3.6 Grok 4.6 定向层 + 胖虎）+ L3 进程层多源探测修复** |
+| `SusuAIOverclock-1.3.6-portable.exe` | ~140 MB | 免安装便携版，双击即用，**已内嵌七个工具包（Codex V9 Astra6 + 命名空间修复 + 反夹层安装侧防线 + Cursor v3.6 Grok 4.6 定向层 + 胖虎）+ L3 进程层多源探测修复** |
 
 > 首次运行 Windows 提示「已保护你的电脑」→ 点 **更多信息 → 仍要运行**。无代码签名证书所致，非软件问题。
 > 若杀软拦截，请将 exe 与包目录加入白名单。
@@ -185,11 +336,11 @@ models.json       与上一版逐文件一致       ✓
 **SHA-256 校验**（可选，验证下载完整）：
 
 ```
-F800C8B606AD2F126922B9C04A40AAD16BF01A32F080D6298C11A6AAFF40AA16
+534E1495CED90020461F9AAE6130B55B07ADC4DD5C384252E78109BD42764B96
 ```
 
 ```powershell
-Get-FileHash .\SusuAIOverclock-1.3.5-portable.exe -Algorithm SHA256
+Get-FileHash .\SusuAIOverclock-1.3.6-portable.exe -Algorithm SHA256
 ```
 
 > **从旧版升级**：直接换用新 exe 即可。若曾遇到「找不到 ffmpeg.dll」，v1.3.1 起会自动识破并重建半截缓存。Codex 包 v8 重装前会备份旧配置（`backups/eni-solo-*`），且**工具事件纯放行（DeepSeek 400 修复）已包含在包内**；Cursor 包 v3.6 重装会先备份旧规则文件再覆盖（.bak.<时间戳>），卸载可还原。Codex 两个分支互不干扰历史配置——石井分支重装仍走 `install-replica.ps1` 自愈（清 PreToolUse 遗留注册）；胖虎分支首次装会隔离当前 hooks.json（含时间戳备份），卸载即还原。原有 `config.toml` 账号配置一律保留。
