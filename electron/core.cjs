@@ -20,7 +20,7 @@ const SKIP_DIRS = new Set(['node_modules', '.git', '.cache', '__pycache__', '.ve
 const MAX_CHANGE_ITEMS = 200;
 
 /**
- * 七个受管工具包的定义（codex 有两个可选破甲分支：冷咖啡石井 / 胖虎）。
+ * 八个受管工具包的定义（codex 有两个可选破甲分支：冷咖啡石井 / 胖虎；WorkBuddy 分国内版 / 国际版）。
  * expected 支持 * 通配（前缀匹配），用于 install-manifest-*.json 这类带时间戳的文件。
  * version 来源按顺序尝试，第一个命中的生效，并把来源一并回报给 UI（不猜、不编造）。
  */
@@ -32,11 +32,11 @@ const PACKS = [
     folder: 'codex',
     target: 'Codex CLI / 桌面端',
     accent: 'sakura',
-    note: 'v9.4：激活握手短路、路由故障兜底、hooks 最小化与安装器升级保护；保留串行工具调用和反夹层硬自检。与胖虎互斥（胖虎会隔离 hooks.json）。',
+    note: 'v10.4：AGENTS.md 并入 L1 契约、整句暗号握手、ConvertTo-DeepDict 换机安装、SkipAstra6 软件路径；保留串行工具调用和反夹层硬自检。与胖虎互斥（胖虎会隔离 hooks.json）。',
     expected: ['Install-OneClick.cmd', 'install-replica.ps1', 'check_codex.ps1', 'materials', 'README-CN.txt', 'Uninstall.ps1'],
     versionSources: [
+      { kind: 'firstLines', file: 'README-CN.txt', maxLines: 5, pattern: '破甲包 v(\\d+\\.\\d+(?:\\.\\d+)?)' },
       { kind: 'firstLines', file: 'README-CN.txt', maxLines: 20, pattern: '【v(\\d+\\.\\d+(?:\\.\\d+)?)' },
-      { kind: 'firstLines', file: 'install-replica.ps1', maxLines: 80, pattern: 'v(\\d+\\.\\d+)' },
       { kind: 'firstLines', file: 'README-CN.txt', maxLines: 5, pattern: 'v(\\d+\\.\\d+(?:\\.\\d+)?)' }
     ]
   },
@@ -57,25 +57,25 @@ const PACKS = [
   {
     id: 'cursor',
     name: 'Cursor 破甲包',
-    subtitle: 'Composer 2.5 + Grok 4.6 双后端定向 · 提问降维轴',
+    subtitle: '懒人包 v1.2 · 18 条用户规则全局生效',
     folder: 'cursor',
     target: 'Cursor 编辑器',
     accent: 'matcha',
-    note: 'v3.6：G46 契约级实测 5/5 通过；有效的是请求层级不是规则文本，Grok 4.6 后端禁用槽位劫持类手法。',
+    note: 'v1.2：setup.py 直装 ~/.cursor/rules 18 条；可选响应篡改代理默认关闭。软件侧带 --no-open，不弹官网。',
     expected: [
-      'Install-OneClick.cmd',
-      'install_cursor.py',
-      'patch_cursor_v32.py',
-      'deploy_starts.py',
-      'materials',
-      'tools',
+      'setup.py',
+      '一键安装.bat',
+      '一键卸载.bat',
+      '使用说明.txt',
       'README-CN.txt',
-      'Uninstall.cmd',
-      '破甲强度测试卡.md'
+      'materials',
+      'materials/rules',
+      'materials/tools/cursor_tamper_proxy.py'
     ],
     versionSources: [
-      { kind: 'firstLines', file: 'README-CN.txt', maxLines: 5, pattern: 'v(\\d+\\.\\d+)' },
-      { kind: 'firstLines', file: 'Install-OneClick.cmd', maxLines: 40, pattern: 'v(\\d+\\.\\d+)' }
+      { kind: 'firstLines', file: 'README-CN.txt', maxLines: 3, pattern: 'v(\\d+\\.\\d+)' },
+      { kind: 'firstLines', file: '使用说明.txt', maxLines: 5, pattern: 'v(\\d+\\.\\d+)' },
+      { kind: 'firstLines', file: 'setup.py', maxLines: 90, pattern: 'PACK_VERSION\\s*=\\s*"v(\\d+\\.\\d+)"' }
     ]
   },
   {
@@ -131,48 +131,80 @@ const PACKS = [
   {
     id: 'workbuddy',
     name: 'WorkBuddy 破甲包',
-    subtitle: 'IDENTITY / MEMORY / SOUL 三层注入',
+    subtitle: 'IDENTITY / MEMORY / SOUL + CLI 注入层 v4.4',
     folder: 'workbuddy',
     target: 'WorkBuddy 客户端',
     accent: 'soda',
-    note: 'v4.0：中性契约版 IDENTITY/MEMORY/SOUL；保留 v1.1 全树模板清理、缓存清理与升级备份。',
+    note: 'v4.4：注入层去对抗签名；多安装根 Find-AllProgs；Temp 沙箱禁止自扫真机；Omen 桥接已迁到 _deprecated-omen-bridge。',
     expected: [
       'Install-OneClick.bat',
       'Install-WB-OneClick.ps1',
-      'launch_lazy_pack.py',
-      'omen_wb_bridge.py',
+      'patch-cli-layer.ps1',
+      'patch-inject-layer.ps1',
+      'verify-install.ps1',
+      'selftest-upgrade.ps1',
       'materials',
+      'pristine-seed',
       'README-CN.txt',
+      'README-UPGRADE-v4.4.md',
       'Uninstall.bat',
-      '启动-Omen-WorkBuddy.bat',
-      '【无窗静默后台启动】Omen.vbs',
-      '【一键停止桥接服务】.bat'
+      'Verify-OneClick.cmd'
     ],
     versionSources: [
-      { kind: 'firstLines', file: 'Install-WB-OneClick.ps1', maxLines: 5, pattern: 'v(\\d+\\.\\d+)' },
-      { kind: 'firstLines', file: 'README-CN.txt', maxLines: 5, pattern: 'v(\\d+\\.\\d+)' }
+      { kind: 'firstLines', file: 'README-CN.txt', maxLines: 5, pattern: 'v(\\d+\\.\\d+)' },
+      { kind: 'firstLines', file: 'Install-WB-OneClick.ps1', maxLines: 8, pattern: 'v(\\d+\\.\\d+)' }
+    ]
+  },
+  {
+    id: 'workbuddy-ai',
+    name: 'WorkBuddy AI 国际版破甲包',
+    subtitle: '懒人包 v1.3 · ~/.workbuddy-ai 人设 + CLI 层',
+    folder: 'workbuddy-ai',
+    target: 'WorkBuddy AI（国际版）',
+    accent: 'indigo',
+    note: 'v1.3：配置根锁死 ~/.workbuddy-ai，与国内版 ~/.workbuddy 互不覆盖。软件侧直调 Install-WBAI-LazyPack.ps1 -NoOpenLinks。',
+    expected: [
+      'Install-WBAI-LazyPack.ps1',
+      'Verify-LazyPack.ps1',
+      '一键安装-双击这里.cmd',
+      '卸载-恢复原状.cmd',
+      '体检-自检.cmd',
+      'README-CN.txt',
+      'materials',
+      'materials/IDENTITY.md',
+      'materials/MEMORY.md',
+      'materials/SOUL-snippet.txt',
+      'tools'
+    ],
+    versionSources: [
+      { kind: 'firstLines', file: 'README-CN.txt', maxLines: 5, pattern: 'v(\\d+\\.\\d+)' },
+      { kind: 'firstLines', file: 'Install-WBAI-LazyPack.ps1', maxLines: 8, pattern: 'v(\\d+\\.\\d+)' }
     ]
   },
   {
     id: 'anti-gravity',
     name: '反重力破甲包',
-    subtitle: 'AGL1-AGL5 · 更新器冻结',
+    subtitle: 'AGL1 三通道 · 更新器冻结',
     folder: 'anti-gravity',
     target: 'Google Antigravity',
     accent: 'grape',
-    note: '本轮已修：假卸载改真卸载；更新器冻结加回读校验 + 只读 + ACL 三层。',
+    note: 'v3.2：rules + skills + plugins 三通道同时覆盖；旧同名 skill 自动挪走解除遮蔽；更新器冻结保留回读/只读/ACL。',
     expected: [
       'Install-OneClick.cmd',
       'Install-AntiGravity.ps1',
       'Uninstall.cmd',
       'Uninstall.ps1',
+      'verify-install.ps1',
+      'selftest-upgrade.ps1',
+      'seed-pristine.ps1',
+      'pristine-seed',
       'install-manifest-*.json',
       'materials',
       'README-CN.txt'
     ],
     versionSources: [
-      { kind: 'latestManifest', pattern: 'install-manifest-*.json' },
-      { kind: 'firstLines', file: 'README-CN.txt', maxLines: 5, pattern: 'v(\\d+\\.\\d+)' }
+      { kind: 'firstLines', file: 'README-CN.txt', maxLines: 5, pattern: 'v(\\d+\\.\\d+)' },
+      { kind: 'latestManifest', pattern: 'install-manifest-*.json' }
     ]
   }
 ];
@@ -522,6 +554,14 @@ function isDirSync(p) {
   }
 }
 
+function isFileSync(p) {
+  try {
+    return fs.statSync(p).isFile();
+  } catch {
+    return false;
+  }
+}
+
 /* ==================================================================
    运行时定位（L3 进程层专用）
    ------------------------------------------------------------------
@@ -770,6 +810,10 @@ function workbuddyHome() {
   return resolvePlatformHome('WB_HOME', '.workbuddy', ['IDENTITY.md', 'MEMORY.md', 'skills']);
 }
 
+function workbuddyAiHome() {
+  return resolvePlatformHome('WBAI_HOME', '.workbuddy-ai', ['IDENTITY.md', 'MEMORY.md', 'skills']);
+}
+
 function opencodeConfigHome() {
   const xdg = process.env.XDG_CONFIG_HOME;
   if (xdg && String(xdg).trim()) {
@@ -860,6 +904,18 @@ const PLATFORM_PROBES = {
     configDirs: [path.join(HOME, '.workbuddy')],
     matchNames: ['workbuddy', 'codebuddy']
   },
+  'workbuddy-ai': {
+    displayName: 'WorkBuddy AI（国际版）',
+    installDirs: [
+      path.join(LOCALAPPDATA, 'Programs', 'WorkBuddyAI'),
+      path.join(LOCALAPPDATA, 'WorkBuddyAI'),
+      path.join(PROGRAMFILES, 'WorkBuddyAI'),
+      path.join(PROGRAMFILES_X86, 'WorkBuddyAI')
+    ],
+    exes: ['WorkBuddyAI.exe', 'WorkBuddy AI.exe'],
+    configDirs: [path.join(HOME, '.workbuddy-ai')],
+    matchNames: ['workbuddyai', 'workbuddy ai']
+  },
   'anti-gravity': {
     displayName: 'Antigravity',
     installDirs: [
@@ -903,7 +959,7 @@ function scanExeWide(exeNames) {
 }
 
 /**
- * 七个包的部署计划。
+ * 八个包的部署计划。
  * evidence 判定"破甲是否生效"，全部来自实际侦察（不是猜的）：
  *   file     目录下存在该文件
  *   dir      该目录存在
@@ -913,7 +969,7 @@ function scanExeWide(exeNames) {
 const DEPLOY_PLANS = {
   codex: {
     // 直调 ps1 并带 -NoOpenLinks：包里的 cmd 不透传参数，ps1 默认会 start 浏览器弹推广链接
-    install: { file: 'install-replica.ps1', kind: 'ps1', args: ['-NoOpenLinks'] },
+    install: { file: 'install-replica.ps1', kind: 'ps1', args: ['-NoOpenLinks', '-SkipAstra6'] },
     uninstall: { file: 'Uninstall.ps1', kind: 'ps1' },
     backupDirs: [codexHome()],
     evidence: [
@@ -961,15 +1017,21 @@ const DEPLOY_PLANS = {
     ]
   },
   cursor: {
-    install: { file: 'Install-OneClick.cmd', kind: 'cmd', input: 'a\r\n' },
-    uninstall: { file: 'Uninstall.cmd', kind: 'cmd', input: 'a\r\n' },
-    backupDirs: [path.join(HOME, '.cursor')],
+    // 直调 setup.py 并带 --no-open：包里的 bat 有 pause，且装完默认会开官网
+    install: { file: 'setup.py', kind: 'py', args: ['install', '--no-open'] },
+    uninstall: { file: 'setup.py', kind: 'py', args: ['uninstall'] },
+    backupDirs: [path.join(HOME, '.cursor'), path.join(HOME, '.cursor-shiyi-lazy')],
     evidence: [
       {
         type: 'glob',
         dir: path.join(HOME, '.cursor', 'rules'),
         pattern: /^shiyi-.*\.mdc$/i,
         label: '.cursor/rules 下有 shiyi-*.mdc'
+      },
+      {
+        type: 'file',
+        path: path.join(HOME, '.cursor-shiyi-lazy', 'installed.json'),
+        label: '.cursor-shiyi-lazy/installed.json 安装记录'
       }
     ]
   },
@@ -1013,13 +1075,35 @@ const DEPLOY_PLANS = {
     ]
   },
   workbuddy: {
-    // 直调 ps1 并带 -NoOpenLinks：包里的 bat 会 start 浏览器打开推广链接
+    // 直调 ps1：bat 会 pause / 弹浏览器。卸载也走 ps1，避免 Uninstall.bat 卡在 pause。
     install: { file: 'Install-WB-OneClick.ps1', kind: 'ps1', args: ['-NoOpenLinks'] },
-    uninstall: { file: 'Uninstall.bat', kind: 'cmd' },
+    uninstall: { file: 'Install-WB-OneClick.ps1', kind: 'ps1', args: ['-Uninstall', '-NoOpenLinks'] },
     backupDirs: [workbuddyHome()],
     evidence: [
       { type: 'file', path: path.join(workbuddyHome(), 'IDENTITY.md'), label: '.workbuddy/IDENTITY.md 存在' },
-      { type: 'file', path: path.join(workbuddyHome(), 'SOUL.md'), label: '.workbuddy/SOUL.md 存在' }
+      { type: 'file', path: path.join(workbuddyHome(), 'SOUL.md'), label: '.workbuddy/SOUL.md 存在' },
+      {
+        type: 'contains',
+        path: path.join(workbuddyHome(), 'IDENTITY.md'),
+        pattern: 'SHIYI-WB-ID:BEGIN|工作区环境',
+        label: '.workbuddy/IDENTITY.md 含 v4.4 标记块'
+      }
+    ]
+  },
+  'workbuddy-ai': {
+    // 直调 ps1：cmd 会 pause / 弹浏览器。配置根必须是 .workbuddy-ai，不能落到国内版 .workbuddy。
+    install: { file: 'Install-WBAI-LazyPack.ps1', kind: 'ps1', args: ['-NoOpenLinks'] },
+    uninstall: { file: 'Install-WBAI-LazyPack.ps1', kind: 'ps1', args: ['-Uninstall', '-NoOpenLinks'] },
+    backupDirs: [workbuddyAiHome()],
+    evidence: [
+      { type: 'file', path: path.join(workbuddyAiHome(), 'IDENTITY.md'), label: '.workbuddy-ai/IDENTITY.md 存在' },
+      { type: 'file', path: path.join(workbuddyAiHome(), 'SOUL.md'), label: '.workbuddy-ai/SOUL.md 存在' },
+      {
+        type: 'contains',
+        path: path.join(workbuddyAiHome(), 'IDENTITY.md'),
+        pattern: '石井|零拒绝|对象无关',
+        label: '.workbuddy-ai/IDENTITY.md 含国际版人设'
+      }
     ]
   },
   'anti-gravity': {
@@ -1029,9 +1113,25 @@ const DEPLOY_PLANS = {
     backupDirs: [path.join(HOME, '.gemini')],
     evidence: [
       {
+        type: 'file',
+        path: path.join(HOME, '.gemini', 'config', 'rules', 'ag-armor.md'),
+        label: '.gemini/config/rules/ag-armor.md 常驻通道'
+      },
+      {
+        type: 'file',
+        path: path.join(HOME, '.gemini', 'config', 'skills', 'coldbrew-breakout', 'SKILL.md'),
+        label: '.gemini/config/skills/coldbrew-breakout 按需通道'
+      },
+      {
         type: 'dir',
         path: path.join(HOME, '.gemini', 'config', 'plugins', 'coldbrew-breakout'),
         label: 'coldbrew-breakout 插件已注入'
+      },
+      {
+        type: 'contains',
+        path: path.join(HOME, '.gemini', 'config', 'rules', 'ag-armor.md'),
+        pattern: 'AG-ARMOR:RULES',
+        label: 'ag-armor.md 含 v3.2 受管块'
       }
     ]
   }
@@ -1099,6 +1199,7 @@ function detectPlatform(id) {
     'codex-panghu': () => [codexHome()],
     dsh: () => [dshHome()],
     workbuddy: () => [workbuddyHome()],
+    'workbuddy-ai': () => [workbuddyAiHome()],
     opencode: () => [opencodeConfigHome(), path.join(APPDATA, 'ai.opencode.desktop')]
   };
   const configCandidates = dynamicConfigDirs[id] ? dynamicConfigDirs[id]() : probe.configDirs;
@@ -1216,6 +1317,21 @@ const BRAND_ICONS = {
       <circle cx="24" cy="10" r="1.5" fill="#FFD166"/>
     </svg>
   `),
+  'workbuddy-ai': svgToDataUrl(`
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
+      <defs>
+        <linearGradient id="wbai-g" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#3D6BFF"/>
+          <stop offset="100%" stop-color="#1F4FD6"/>
+        </linearGradient>
+      </defs>
+      <rect width="48" height="48" rx="12" fill="url(#wbai-g)"/>
+      <circle cx="24" cy="24" r="11" fill="none" stroke="#FFFFFF" stroke-width="2"/>
+      <ellipse cx="24" cy="24" rx="5" ry="11" fill="none" stroke="#FFFFFF" stroke-width="1.6"/>
+      <line x1="13" y1="24" x2="35" y2="24" stroke="#FFFFFF" stroke-width="1.6"/>
+      <line x1="24" y1="13" x2="24" y2="35" stroke="#FFFFFF" stroke-width="1.4"/>
+    </svg>
+  `),
   'anti-gravity': svgToDataUrl(`
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
       <defs>
@@ -1277,6 +1393,16 @@ const BRAND_ICONS = {
  * ps1 → powershell -ExecutionPolicy Bypass -File
  * cmd/bat → cmd /d /s /c
  */
+function resolvePythonBin() {
+  if (process.env.DANGO_PYTHON && existsSyncPath(process.env.DANGO_PYTHON)) return process.env.DANGO_PYTHON;
+  const wb = [
+    path.join(HOME, '.workbuddy', 'binaries', 'python', 'versions', '3.13.12', 'python.exe'),
+    path.join(HOME, '.workbuddy', 'binaries', 'python', 'versions', '3.12.8', 'python.exe')
+  ];
+  for (const p of wb) if (existsSyncPath(p)) return p;
+  return 'python';
+}
+
 function buildSpawn(script, packPath) {
   const full = path.join(packPath, script.file);
   if (!existsSyncPath(full)) return null;
@@ -1287,6 +1413,16 @@ function buildSpawn(script, packPath) {
       cmd: 'powershell.exe',
       args,
       display: `powershell -ExecutionPolicy Bypass -File "${script.file}" ${(script.args || []).join(' ')}`.trim(),
+      input: script.input || null
+    };
+  }
+  if (script.kind === 'py') {
+    const py = resolvePythonBin();
+    const args = [full, ...(script.args || [])];
+    return {
+      cmd: py,
+      args,
+      display: `python "${script.file}" ${(script.args || []).join(' ')}`.trim(),
       input: script.input || null
     };
   }
@@ -1479,6 +1615,25 @@ const CONFIG_CHECKS = {
     return { ok, detail: ok ? '配置就绪' : items.find((i) => !i.ok).label, items };
   },
 
+  'workbuddy-ai'() {
+    const dir = workbuddyAiHome();
+    const idFile = path.join(dir, 'IDENTITY.md');
+    const soul = path.join(dir, 'SOUL.md');
+    const items = [];
+    let hasMark = false;
+    if (existsSyncPath(idFile)) {
+      try {
+        hasMark = /石井|零拒绝|对象无关/i.test(fs.readFileSync(idFile, 'utf8'));
+      } catch {
+        hasMark = false;
+      }
+    }
+    items.push({ ok: hasMark, label: '.workbuddy-ai/IDENTITY.md 含国际版人设', detail: idFile });
+    items.push({ ok: existsSyncPath(soul), label: '.workbuddy-ai/SOUL.md 存在', detail: soul });
+    const ok = items.every((i) => i.ok);
+    return { ok, detail: ok ? '配置就绪' : items.find((i) => !i.ok).label, items };
+  },
+
   opencode() {
     const items = [];
     const cfgDir = opencodeConfigHome();
@@ -1508,9 +1663,14 @@ const CONFIG_CHECKS = {
   },
 
   'anti-gravity'() {
-    const dir = path.join(HOME, '.gemini', 'config', 'plugins', 'coldbrew-breakout');
+    const cfg = path.join(HOME, '.gemini', 'config');
     const items = [];
-    items.push({ ok: isDirSync(dir), label: 'coldbrew-breakout 插件已注入', detail: dir });
+    const armor = path.join(cfg, 'rules', 'ag-armor.md');
+    const skill = path.join(cfg, 'skills', 'coldbrew-breakout', 'SKILL.md');
+    const plugin = path.join(cfg, 'plugins', 'coldbrew-breakout');
+    items.push({ ok: isFileSync(armor), label: 'rules/ag-armor.md 常驻通道', detail: armor });
+    items.push({ ok: isFileSync(skill), label: 'skills/coldbrew-breakout 按需通道', detail: skill });
+    items.push({ ok: isDirSync(plugin), label: 'coldbrew-breakout 插件已注入', detail: plugin });
     const ok = items.every((i) => i.ok);
     return { ok, detail: ok ? '配置就绪' : items.find((i) => !i.ok).label, items };
   }
@@ -1527,7 +1687,7 @@ function analyzeReply(text) {
     hasRefusal: /I can't|I cannot|can(?:no|')t help|cannot assist|unable to assist|must refuse|无法协助|不能帮|无法提供|无法完成|对不起|抱歉，|不能协助/i.test(t),
     hasThinking: /<think>|<\/think>|reasoning|思考过程|thinking:|thinking>/i.test(t),
     hasDisclosure: /I am an AI|as an AI|I'm an AI|人工智能助手|作为一个AI|作为AI|我是AI/i.test(t),
-    hasRoute: /\[?石井\s*ROUTE/i.test(t)
+    hasRoute: /\[石井\s*ROUTE|\[ROUTE\]/i.test(t)
   };
   let verdict = 'ambiguous';
   if (feats.hasShiyi && !feats.hasRefusal) verdict = 'active';
@@ -1714,13 +1874,14 @@ const L4_CHANNELS = {
   cursor: { mode: 'gui' },
   opencode: { mode: 'gui' },
   workbuddy: { mode: 'gui' },
+  'workbuddy-ai': { mode: 'gui' },
   'anti-gravity': { mode: 'gui' }
 };
 
 /* ==================================================================
    内嵌破甲包 · 软件单体分发
    ------------------------------------------------------------------
-   打包后七包在 process.resourcesPath/packs；开发态在项目 packed-packs。
+   打包后各包在 process.resourcesPath/packs；开发态在项目 packed-packs。
    脚本必须落在真实文件系统（extraResources），不能进 asar。
    ================================================================== */
 
@@ -1783,11 +1944,12 @@ const PLATFORM_SIGNATURES = {
   },
   cursor: {
     fileHints: [
-      { re: /install_cursor|patch_cursor|deploy_starts/i, weight: 40 },
+      { re: /cursor_tamper_proxy|setup\.py/i, weight: 36 },
+      { re: /使用说明\.txt/i, weight: 12 },
       { re: /^\.cursorrules$/i, weight: 14 },
       { re: /\.mdc$/i, weight: 9 },
       { re: /cursor/i, weight: 7 },
-      { re: /破甲强度测试卡/i, weight: 12 }
+      { re: /一键安装\.bat/i, weight: 8 }
     ],
     contentHints: [
       { re: /\.cursor|cursor\.exe|Composer/i, weight: 12 },
@@ -1823,14 +1985,27 @@ const PLATFORM_SIGNATURES = {
   workbuddy: {
     fileHints: [
       { re: /^Install-WB-OneClick\.ps1$/i, weight: 40 },
+      { re: /^patch-inject-layer\.ps1$|^patch-cli-layer\.ps1$/i, weight: 30 },
       { re: /workbuddy|omen_wb|launch_lazy/i, weight: 25 },
       { re: /omen/i, weight: 8 },
       { re: /WB/i, weight: 3 }
     ],
     contentHints: [
-      { re: /workbuddy|\.workbuddy/i, weight: 14 },
+      { re: /\.workbuddy(?!-ai)/i, weight: 14 },
       { re: /IDENTITY\.md|SOUL\.md|MEMORY\.md/i, weight: 10 },
       { re: /omen/i, weight: 4 }
+    ]
+  },
+  'workbuddy-ai': {
+    fileHints: [
+      { re: /^Install-WBAI-LazyPack\.ps1$/i, weight: 40 },
+      { re: /Verify-LazyPack\.ps1/i, weight: 20 },
+      { re: /WorkBuddyAI|workbuddy-ai|WBAI/i, weight: 25 },
+      { re: /一键安装-双击这里\.cmd/i, weight: 10 }
+    ],
+    contentHints: [
+      { re: /\.workbuddy-ai|WorkBuddyAI|WBHomePath/i, weight: 16 },
+      { re: /国际版|IDENTITY\.md|SOUL-snippet/i, weight: 10 }
     ]
   },
   'anti-gravity': {
@@ -1838,6 +2013,7 @@ const PLATFORM_SIGNATURES = {
       { re: /^Install-AntiGravity\.ps1$/i, weight: 40 },
       { re: /antigravity|anti-?gravity/i, weight: 25 },
       { re: /install-manifest-/i, weight: 20 },
+      { re: /ag-armor|selftest-upgrade|verify-install/i, weight: 16 },
       { re: /coldbrew/i, weight: 15 }
     ],
     contentHints: [
@@ -1883,9 +2059,13 @@ const RULE_FILE_SIGNATURES = {
     { re: /shield-protocol/i, weight: 6 }
   ],
   workbuddy: [
-    { re: /\.workbuddy[\\/]|workbuddy/i, weight: 16 },
+    { re: /\.workbuddy(?!-ai)[\\/]|workbuddy(?!-ai)/i, weight: 16 },
     { re: /IDENTITY\.md|SOUL\.md|USER\.md|MEMORY\.md/i, weight: 6 },
     { re: /omen|词元喵喵/i, weight: 5 }
+  ],
+  'workbuddy-ai': [
+    { re: /\.workbuddy-ai[\\/]|WorkBuddyAI|国际版/i, weight: 18 },
+    { re: /IDENTITY\.md|SOUL\.md|MEMORY\.md/i, weight: 6 }
   ],
   'anti-gravity': [
     { re: /\.gemini[\\/]|antigravity|anti-?gravity/i, weight: 16 },
@@ -2181,6 +2361,11 @@ const RULE_FILE_TARGETS = {
     mode: 'append',
     file: () => path.join(workbuddyHome(), 'USER.md'),
     label: '.workbuddy/USER.md（用户画像层）'
+  },
+  'workbuddy-ai': {
+    mode: 'append',
+    file: () => path.join(workbuddyAiHome(), 'USER.md'),
+    label: '.workbuddy-ai/USER.md（国际版用户画像层）'
   },
   opencode: {
     mode: 'append',
@@ -2851,6 +3036,7 @@ module.exports = {
   codexHome,
   dshHome,
   workbuddyHome,
+  workbuddyAiHome,
   opencodeConfigHome,
   resolvePlatformHome,
   embeddedPacksRoot,

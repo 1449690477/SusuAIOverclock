@@ -46,8 +46,8 @@ export default function SusuAvatar({
           position: 'absolute',
           inset: -3,
           borderRadius: '50%',
-          background: 'linear-gradient(135deg, #ffc7d9 0%, #b8c7ff 50%, #ffd4ea 100%)',
-          boxShadow: '0 0 14px rgba(255, 183, 197, 0.65)',
+          background: 'linear-gradient(135deg, #cfe6fb 0%, #8ec8f4 50%, #eaf4fd 100%)',
+          boxShadow: '0 0 14px rgba(110, 180, 238, 0.45)',
           opacity: 0.92,
           zIndex: 1
         }}
@@ -62,7 +62,7 @@ export default function SusuAvatar({
           borderRadius: '50%',
           overflow: 'hidden',
           border: '2px solid #ffffff',
-          boxShadow: '0 2px 8px rgba(108, 92, 231, 0.18)',
+          boxShadow: '0 2px 8px rgba(64, 118, 168, 0.16)',
           backgroundColor: '#fff',
           zIndex: 2
         }}
@@ -90,7 +90,7 @@ export default function SusuAvatar({
             width: badgeSize,
             height: badgeSize,
             borderRadius: '50%',
-            background: 'linear-gradient(135deg, #ffd166, #ff758c)',
+            background: 'linear-gradient(135deg, #7ec4f0, #5aa8e6)',
             border: '1.5px solid #ffffff',
             boxShadow: '0 1px 4px rgba(0,0,0,0.15)',
             display: 'flex',

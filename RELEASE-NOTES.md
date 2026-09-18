@@ -1,3 +1,91 @@
+# v1.5.4 — 新增 WorkBuddy AI 国际版破甲卡片
+
+## 同步内容
+
+- 新增内嵌包 `workbuddy-ai`（懒人包 v1.3），不替换国内版 WorkBuddy。
+- 软件侧直调 `Install-WBAI-LazyPack.ps1 -NoOpenLinks` / `-Uninstall`。
+- 配置根 `~/.workbuddy-ai`，与 `~/.workbuddy` 隔离。
+- 应用版本升至 `1.5.4`。
+
+## 发布前校验
+
+- 沙盒 A 干净机 / B 已有人设机安装+卸载，真机 `~/.workbuddy-ai` / `WorkBuddyAI` 哈希不变。
+- `npm test` 通过。
+- `package.json.version` 必须为 `1.5.4`。
+
+---
+
+# v1.5.3 — 内嵌 Cursor 包同步懒人包 v1.2
+
+## 同步内容
+
+- 用 `cursor 破`（v1.2）整包替换内嵌 Cursor 包。
+- 软件侧直调 `setup.py install --no-open` / `uninstall`。
+- 不打入旧 v3.6 的 `install_cursor.py` 与 `实测记录/`。
+- 应用版本升至 `1.5.3`。
+
+## 发布前校验
+
+- `python setup.py --selftest` 通过。
+- 沙盒 A 干净机 / B 已有规则机安装+卸载，真机 `~/.cursor` 哈希不变。
+- `npm test` 通过。
+- `package.json.version` 必须为 `1.5.3`。
+
+---
+
+# v1.5.2 — 内嵌反重力包同步 v3.2
+
+## 同步内容
+
+- 用 `anti-gravity-v3.2` 整包替换内嵌反重力包。
+- 不打入本机 `backups/` / `evidence/`。
+- `DEPLOY_PLANS.anti-gravity` 仍直调 `Install-AntiGravity.ps1 -NoOpenLinks`。
+- 应用版本升至 `1.5.2`。
+
+## 发布前校验
+
+- 源包 `selftest-upgrade.ps1` 隔离自检全绿。
+- 内嵌副本再跑同一套自检 + 干净/旧遮蔽/自定义规则三场景沙盒安装。
+- `npm test` 通过。
+- `package.json.version` 必须为 `1.5.2`。
+
+---
+
+# v1.5.1 — 内嵌 WorkBuddy 包同步 v4.4
+
+## 同步内容
+
+- 用 `C:\Users\Administrator\Desktop\wb破4.4` 整包替换内嵌 WorkBuddy 包。
+- 不打入本机 `_quarantine` / `_*-state.json`。
+- `DEPLOY_PLANS.workbuddy` 安装/卸载均直调 `Install-WB-OneClick.ps1 -NoOpenLinks`。
+- 应用版本升至 `1.5.1`。
+
+## 发布前校验
+
+- 源包 `selftest-upgrade.ps1`：83/83。
+- 内嵌副本再跑同一套自检 + 干净/已有/自定义三场景沙盒安装。
+- `npm test` 通过。
+- `package.json.version` 必须为 `1.5.1`。
+
+---
+
+# v1.5.0 — 内嵌 Codex 包同步 v10.4
+
+## 同步内容
+
+- 用 `C:\Users\Administrator\Desktop\新版\codex-break-kit-v10` 整包替换内嵌 Codex「冷咖啡石井」。
+- 桌面端加固保留：vision-exp 串行工具、反夹层硬自检、`DEPLOY_PLANS.codex` 直调 `install-replica.ps1 -NoOpenLinks -SkipAstra6`。
+- 升级识别补上 1.4 内嵌 hook 哈希 `C18FE139…` 与独立 v10.4 原版 `B301B25F…`。
+- 应用版本升至 `1.5.0`。
+
+## 发布前校验
+
+- `npm test` 通过。
+- 沙盒安装：干净 home / 已有 hooks.json / 非作者路径，均能完整跑完 `install-replica.ps1`。
+- `package.json.version` 必须为 `1.5.0`。
+
+---
+
 # v1.4.0 — DSH v5.7.0 同步
 
 ## 同步内容

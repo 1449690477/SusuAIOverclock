@@ -129,7 +129,7 @@ export default function App() {
 
     // 逐个取平台真实图标（从 exe 提取）
     (async () => {
-      for (const id of ['codex', 'codex-panghu', 'cursor', 'dsh', 'opencode', 'workbuddy', 'anti-gravity']) {
+      for (const id of ['codex', 'codex-panghu', 'cursor', 'dsh', 'opencode', 'workbuddy', 'workbuddy-ai', 'anti-gravity']) {
         // eslint-disable-next-line no-await-in-loop
         const r = await api.getIcon(id).catch(() => null);
         if (!alive) return;
@@ -259,12 +259,24 @@ export default function App() {
 
   return (
     <div className={`app${reducedMotion ? ' reduced-motion' : ''}`}>
+      <div className="fx-stage" data-testid="fx-stage" aria-hidden="true">
+        <i className="fx-orb fx-orb-a" />
+        <i className="fx-orb fx-orb-b" />
+        <i className="fx-orb fx-orb-c" />
+        <i className="fx-beam" />
+        <i className="fx-spark fx-spark-1" />
+        <i className="fx-spark fx-spark-2" />
+        <i className="fx-spark fx-spark-3" />
+        <i className="fx-spark fx-spark-4" />
+        <i className="fx-spark fx-spark-5" />
+        <i className="fx-spark fx-spark-6" />
+      </div>
       <header className="titlebar">
         <div className="titlebar-logo">
           <MascotCat size={38} />
           <div>
             <div className="titlebar-title">苏苏 AI超频 · Susu AI Overclock</div>
-            <div className="titlebar-sub">七大模型工作台 · 深度状态与会话监控</div>
+            <div className="titlebar-sub">八大模型工作台 · 深度状态与会话监控</div>
           </div>
         </div>
         <div className="titlebar-spacer" />
@@ -286,7 +298,7 @@ export default function App() {
               title="苏苏的公益中转~ (https://susu.wiki/)"
               data-testid="link-wiki"
             >
-              <span className="cute-emoji">💖</span>
+              <span className="cute-emoji">✨</span>
               <span className="cute-text">苏苏的公益中转~</span>
             </button>
           </div>
@@ -334,8 +346,8 @@ export default function App() {
                 <MascotCat size={110} />
                 <h3>先选一个根目录</h3>
                 <p>
-                  选择包含七个工具包文件夹的父目录（codex / codex-panghu / cursor / dsh / opencode / workbuddy /
-                  anti-gravity）。选好后可以一键安装、卸载、备份，并验证破甲是否生效。
+                  选择包含工具包文件夹的父目录（codex / codex-panghu / cursor / dsh / opencode / workbuddy /
+                  workbuddy-ai / anti-gravity）。选好后可以一键安装、卸载、备份，并验证破甲是否生效。
                 </p>
                 <button className="btn btn-primary" onClick={() => run(() => api.chooseRoot())} disabled={busy}>
                   <FolderSearch size={14} /> 选择根目录

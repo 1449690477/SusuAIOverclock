@@ -168,8 +168,8 @@ function FeatureRadar({ a }: { a: ReplyAnalysis }) {
             <div
               key={c.label}
               style={{
-                background: isGood ? '#f2fbf6' : '#fff5f5',
-                border: `1px solid ${isGood ? '#bfe8d2' : '#ffc9c9'}`,
+                background: isGood ? '#f3faff' : '#fff5f5',
+                border: `1px solid ${isGood ? '#b7dcef' : '#ffc9c9'}`,
                 borderRadius: 'var(--r-sm)',
                 padding: '8px 10px',
                 fontSize: 11

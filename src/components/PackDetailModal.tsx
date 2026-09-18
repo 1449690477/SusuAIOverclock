@@ -115,7 +115,7 @@ export default function PackDetailModal({
           </div>
         ) : null}
 
-        <div className="warn-box">
+        <div className="note-box">
           安装与卸载调用的是这个包目录里<strong>自带的脚本</strong>（{plan?.installFile || '无'} / {plan?.uninstallFile || '无'}），
           本软件不生成、不改写任何注入内容。执行过程与退出码在下方日志里完整可见。
         </div>

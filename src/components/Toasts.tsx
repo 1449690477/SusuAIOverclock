@@ -14,7 +14,7 @@ export default function Toasts({ items }: { items: ToastItem[] }) {
       {items.map((t) => (
         <div className={`toast ${t.kind}`} key={t.id} data-testid="toast">
           {t.kind === 'ok' ? (
-            <CheckCircle2 size={15} color="#3fae72" />
+            <CheckCircle2 size={15} color="#2a7fa8" />
           ) : t.kind === 'err' ? (
             <XCircle size={15} color="#e06c75" />
           ) : (

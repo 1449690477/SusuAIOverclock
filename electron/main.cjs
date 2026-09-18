@@ -668,7 +668,7 @@ function registerIpc() {
 
   ipcMain.handle('dango:chooseRoot', async () => {
     const res = await dialog.showOpenDialog(win, {
-      title: '选择包含七个工具包的根目录',
+      title: '选择包含工具包的根目录',
       properties: ['openDirectory']
     });
     if (res.canceled || !res.filePaths.length) return buildHub();

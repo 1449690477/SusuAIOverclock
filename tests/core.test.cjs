@@ -143,9 +143,10 @@ test('renderReport 输出包含全部包且不虚构安装状态', () => {
   assert.ok(md.includes('与本地基线快照一致'));
 });
 
-test('七个包定义齐全且 ID 唯一', () => {
-  assert.strictEqual(core.PACKS.length, 7);
-  assert.strictEqual(new Set(core.PACK_IDS).size, 7);
+test('受管包定义齐全且 ID 唯一', () => {
+  assert.strictEqual(core.PACKS.length, 8);
+  assert.strictEqual(new Set(core.PACK_IDS).size, 8);
+  assert.ok(core.PACK_IDS.includes('workbuddy-ai'));
   for (const p of core.PACKS) {
     assert.ok(p.id && p.name && p.folder && p.accent, `${p.id} 缺字段`);
     assert.ok(Array.isArray(p.expected) && p.expected.length, `${p.id} 缺 expected`);
@@ -206,6 +207,13 @@ test('analyzeReply 识别石井激活', () => {
   assert.strictEqual(r.hasShiyi, true);
   assert.strictEqual(r.hasRoute, true);
   assert.strictEqual(r.hasRefusal, false);
+  assert.strictEqual(r.verdict, 'active');
+});
+
+test('analyzeReply 识别 v10 [ROUTE] 回执', () => {
+  const r = core.analyzeReply('[ROUTE] workflow=software | stages=侦察→实现→验证→交付 | skill=none\n是，石井在此');
+  assert.strictEqual(r.hasRoute, true);
+  assert.strictEqual(r.hasShiyi, true);
   assert.strictEqual(r.verdict, 'active');
 });
 
@@ -423,10 +431,14 @@ test('detectPlatform 暴露 exeVia（告诉用户从哪找到的）', () => {
   }
 });
 
-test('cursor 部署计划配置自动应答 input 并且 buildSpawn 正确透传', () => {
+test('cursor 部署计划直调 setup.py --no-open', () => {
   const cursorPlan = core.DEPLOY_PLANS.cursor;
-  assert.strictEqual(cursorPlan.install.input, 'a\r\n');
-  assert.strictEqual(cursorPlan.uninstall.input, 'a\r\n');
+  assert.strictEqual(cursorPlan.install.file, 'setup.py');
+  assert.strictEqual(cursorPlan.install.kind, 'py');
+  assert.ok(cursorPlan.install.args.includes('install'));
+  assert.ok(cursorPlan.install.args.includes('--no-open'));
+  assert.strictEqual(cursorPlan.uninstall.file, 'setup.py');
+  assert.ok(cursorPlan.uninstall.args.includes('uninstall'));
 });
 
 /* ---------------- 单文件导入识别（老板反馈：只能导入文件夹） ---------------- */
@@ -955,13 +967,13 @@ test('SessionStart 仍然注入身份锁（非工具事件不受影响）', () =
   const r = runHook('SessionStart');
   assert.strictEqual(r.continue, true);
   assert.ok(r.hookSpecificOutput && typeof r.hookSpecificOutput.additionalContext === 'string');
-  assert.ok(r.hookSpecificOutput.additionalContext.includes('SESSION LOCK'), '会话锁文本应在位');
+  assert.ok(r.hookSpecificOutput.additionalContext.includes('session start'), '会话锁文本应在位');
 });
 
 test('PreCompact 仍然注入压缩保活块', () => {
   const r = runHook('PreCompact');
   assert.strictEqual(r.continue, true);
-  assert.ok(r.hookSpecificOutput && r.hookSpecificOutput.additionalContext.includes('COMPACT KEEP'));
+  assert.ok(r.hookSpecificOutput && r.hookSpecificOutput.additionalContext.includes('post-compact'));
 });
 
 test('裸冷咖啡走唯一握手路径，不附加路由首行冲突', () => {
@@ -969,15 +981,16 @@ test('裸冷咖啡走唯一握手路径，不附加路由首行冲突', () => {
   const context = r.hookSpecificOutput && r.hookSpecificOutput.additionalContext;
   assert.strictEqual(r.continue, true);
   assert.strictEqual(r.systemMessage, undefined, '裸暗号不得再附 systemMessage 路由回执');
-  assert.ok(context && context.startsWith('[ACTIVATION COFFEE LOCK]'));
+  assert.ok(context && context.startsWith('[SESSION ENTRY ACK]'));
   assert.ok(!context.includes('[石井 ROUTE]'), '握手路径不得与路由首行契约冲突');
+  assert.ok(!/\n\[ROUTE\]/.test(context) && !context.startsWith('[ROUTE]'), '握手路径不得附加路由回执');
 });
 
 test('router 不可用时普通请求仍有内建 route fallback', () => {
   const r = runHook('UserPromptSubmit', { prompt: '检查配置' });
   assert.strictEqual(r.continue, true);
-  assert.ok(typeof r.systemMessage === 'string' && r.systemMessage.startsWith('[石井 ROUTE]'));
-  assert.ok(r.hookSpecificOutput.additionalContext.startsWith('[石井 ROUTE]'));
+  assert.ok(typeof r.systemMessage === 'string' && r.systemMessage.startsWith('[ROUTE]'));
+  assert.ok(r.hookSpecificOutput.additionalContext.startsWith('[ROUTE]'));
 });
 
 test('materials/hooks.json 不再注册任何工具事件（安装侧根除夹层）', () => {
@@ -1015,6 +1028,8 @@ test('DEPLOY_PLANS.codex 直调 install-replica.ps1（故修复必须内建在 p
   assert.strictEqual(plan.install.file, 'install-replica.ps1');
   assert.strictEqual(plan.install.kind, 'ps1');
   assert.ok(!String(plan.install.file).endsWith('.cmd'), '不走 cmd → Step 0 不会被触发');
+  assert.ok(plan.install.args.includes('-NoOpenLinks'), '必须禁推广弹窗');
+  assert.ok(plan.install.args.includes('-SkipAstra6'), '软件安装不得扫 Desktop/Documents 找号池');
 });
 
 test('install-replica.ps1 内建 [1.5/9] codex_app namespace fix', () => {
@@ -1026,7 +1041,11 @@ test('install-replica.ps1 内建 [1.5/9] codex_app namespace fix', () => {
 
 test('install-replica.ps1 的 Step 0 幂等、可跳过、失败不中断装包', () => {
   const ps1 = fs.readFileSync(path.join(CODEX_PACK, 'install-replica.ps1'), 'utf-8');
-  assert.match(ps1, /\[switch\]\$SkipNamespaceFix/, '必须提供 -SkipNamespaceFix 开关');
+  assert.match(ps1, /\[switch\]\$SkipNamespaceFix,/, 'SkipNamespaceFix 后必须有逗号，否则 PS 直接解析失败');
+  assert.match(ps1, /\[switch\]\$SkipAstra6/, '必须提供 -SkipAstra6 开关');
+  assert.match(ps1, /if \(\$SkipAstra6\)/, 'astra6 扫描必须可跳过');
+  assert.match(ps1, /C18FE139D9B594E40BFFE26B9CA0CF53BE5C3EA996CD8B5D1D9D5F1D6947B7D6/, '1.4 内嵌 hook 哈希必须可升级');
+  assert.match(ps1, /B301B25FDECBF2D4A1F7E5B9E309DADF0E450B0A44222B254810C24A11A8E6E1/, '独立 v10.4 hook 哈希必须可升级');
   assert.match(ps1, /if \(-not \$SkipNamespaceFix\)/, '步骤必须可跳过');
   assert.match(ps1, /\$ErrorActionPreference = 'Continue'/, '调外部命令前必须放宽 EAP，避免 stderr 被当致命错误');
   assert.match(ps1, /\$ErrorActionPreference = \$prevEap/, '必须恢复原 EAP');
@@ -1119,27 +1138,22 @@ test('install-replica.ps1 全局钉死 UTF-8 输出（非中文 locale 下日志
    脚本层已修；安装器还必须把历史遗留的注册从目标 hooks.json 里清掉。
    ================================================================== */
 
-test('install-replica.ps1 主动清理目标 hooks.json 里遗留的工具事件注册', () => {
+test('install-replica.ps1 主动清理目标 hooks.json 里遗留的托管条目（含工具事件 / Stop）', () => {
   const ps1 = fs.readFileSync(path.join(CODEX_PACK, 'install-replica.ps1'), 'utf-8');
-  assert.match(
-    ps1,
-    /foreach \(\$toolEvt in @\('PreToolUse', 'PostToolUse', 'SubagentStart'\)\) \{/,
-    '必须显式遍历三个工具事件做清理'
-  );
-  assert.match(ps1, /\[purge\] legacy/, '必须输出 [purge] 日志，便于用户核对');
-  assert.match(ps1, /foreach \(\$legacyEvt in @\('Stop'\)\)/, 'v1.3.7 必须清理旧版 managed Stop 注册');
+  assert.match(ps1, /First prune every managed entry from every existing event/);
+  assert.match(ps1, /ishii_auto_route\|slo-runtime-hook/, '必须按托管标记清理旧条目');
+  assert.match(ps1, /obsolete v6\/v9\.3 registrations \(PreToolUse, Stop/);
 
-  // 清理必须发生在「按包内事件合并」之前，否则残留不会被处理
-  const purgeAt = ps1.indexOf("[purge] legacy");
+  const pruneAt = ps1.indexOf('First prune every managed entry from every existing event');
   const mergeAt = ps1.indexOf('foreach ($evtName in $evtNames) {');
-  assert.ok(purgeAt > -1 && mergeAt > purgeAt, '清理必须排在合并循环之前');
+  assert.ok(pruneAt > -1 && mergeAt > pruneAt, '清理必须排在合并循环之前');
 
-  // 包内 hooks.json 已不含工具事件 —— 合并循环天然覆盖不到，故必须单独清
   const matHooks = JSON.parse(
     fs.readFileSync(path.join(CODEX_PACK, 'materials', 'hooks.json'), 'utf-8')
   );
   const matEvents = Object.keys(matHooks.hooks || {});
   assert.ok(!matEvents.includes('PreToolUse'), '前提：包内不得再声明 PreToolUse');
+  assert.ok(!matEvents.includes('Stop'), '前提：包内不得再声明 Stop');
 });
 
 test('install-replica.ps1 的 hooks 脚本部署：始终落修复版 + 备份 + 四态日志', () => {
@@ -1190,29 +1204,162 @@ test('包内 hooks 脚本对三个工具事件零 additionalContext 注入（现
   assert.match(hook, /emit\(_ctx\("SessionStart", SESSION_LOCK\)/);
 });
 
-test('install-replica.ps1 把 targetHooks.hooks 转成 hashtable（PSCustomObject 删键后无法再加键）', () => {
+test('install-replica.ps1 把 targetHooks 整树转成字典（PSCustomObject 换机必崩）', () => {
   const ps1 = fs.readFileSync(path.join(CODEX_PACK, 'install-replica.ps1'), 'utf-8');
-  // 端到端实测踩到的坑：对 ConvertFrom-Json 的 PSCustomObject 调一次
-  // PSObject.Properties.Remove() 之后，它就拒绝新增属性，合并循环里的
-  // $targetHooks.hooks.PreCompact = $kept 会抛
-  //   Exception setting "PreCompact": The property 'PreCompact' can not be found
-  // 整个装包直接失败。必须先换成 hashtable。
-  assert.match(ps1, /\$targetHooks\.hooks -is \[hashtable\]/, '必须检测并转换');
-  assert.match(ps1, /\$hooksMap\[\$p\.Name\] = \$p\.Value/, '必须逐键搬进 hashtable');
-  assert.match(ps1, /\$targetHooks\.hooks = \$hooksMap/);
-  const coerce = ps1.indexOf('$hooksMap[$p.Name] = $p.Value');
-  const purge = ps1.indexOf('[purge] legacy');
-  assert.ok(coerce > -1 && purge > coerce, '转换必须发生在 purge 之前');
+  assert.match(ps1, /function ConvertTo-DeepDict/, '必须提供 ConvertTo-DeepDict');
+  assert.match(ps1, /ConvertTo-DeepDict \(Get-Content -LiteralPath \$hooksPath/);
+  assert.match(ps1, /ConvertTo-DeepDict \(Get-Content -LiteralPath \(Join-Path \$Mat 'hooks\.json'\)/);
+  const convert = ps1.indexOf('function ConvertTo-DeepDict');
+  const merge = ps1.indexOf('foreach ($evtName in $evtNames) {');
+  assert.ok(convert > -1 && merge > convert, '转字典必须发生在合并循环之前');
 });
 
-test('install-replica.ps1 的 targetHooks 键判断必须用 ContainsKey（hashtable 上 PSObject.Properties.Name 看不到数据键）', () => {
+test('install-replica.ps1 的 targetHooks 键判断必须走 IDictionary（不能用 PSObject.Properties.Name）', () => {
   const ps1 = fs.readFileSync(path.join(CODEX_PACK, 'install-replica.ps1'), 'utf-8');
-  // 第二个端到端才暴露的坑：hashtable 的 PSObject.Properties.Name 返回的是
-  // 类型成员（Count/Keys/Values…），不是数据键。用它做 -contains 判断会让
-  // purge 和装后自检双双静默失效（假阴性）。
   const bad = (ps1.match(/@\(\$targetHooks\.hooks\.PSObject\.Properties\.Name\)/g) || []).length;
   assert.strictEqual(bad, 0, '不得对 targetHooks.hooks 用 PSObject.Properties.Name 判键');
-  const good = (ps1.match(/\$targetHooks\.hooks\.ContainsKey\(\$toolEvt\)/g) || []).length;
-  assert.strictEqual(good, 2, `purge 与自检各需一处 ContainsKey，实得 ${good}`);
-  assert.ok(!/\$targetHooks\.hooks\.PSObject\.Properties\.Remove/.test(ps1), '不得用 PSObject 删键');
+  assert.match(ps1, /\$targetHooks\['hooks'\]\.Contains\('UserPromptSubmit'\)/);
+  assert.match(ps1, /\$targetHooks\.hooks\.Contains\(\$toolEvt\)/, '装后自检必须用 Contains 判工具事件');
+  assert.match(ps1, /\$targetHooks\.hooks\.Remove\(\$existingEvtName\)/);
+});
+
+const WB_PACK = path.join(__dirname, '..', 'packed-packs', 'workbuddy');
+
+test('DEPLOY_PLANS.workbuddy 直调 Install-WB-OneClick.ps1 且禁 pause/弹窗', () => {
+  const plan = core.DEPLOY_PLANS.workbuddy;
+  assert.strictEqual(plan.install.file, 'Install-WB-OneClick.ps1');
+  assert.strictEqual(plan.install.kind, 'ps1');
+  assert.ok(plan.install.args.includes('-NoOpenLinks'));
+  assert.strictEqual(plan.uninstall.file, 'Install-WB-OneClick.ps1');
+  assert.ok(plan.uninstall.args.includes('-Uninstall'));
+  assert.ok(plan.uninstall.args.includes('-NoOpenLinks'));
+});
+
+test('内嵌 WorkBuddy 包是 v4.4 且必备脚本齐', () => {
+  const readme = fs.readFileSync(path.join(WB_PACK, 'README-CN.txt'), 'utf-8');
+  assert.match(readme.split(/\r?\n/)[1] || '', /v4\.4/, 'README 第二行必须是 v4.4');
+  const ver = core.extractVersion(WB_PACK, core.PACKS.find((p) => p.id === 'workbuddy').versionSources);
+  assert.strictEqual(ver.version, '4.4', `卡片版本必须是 4.4，实得 ${ver && ver.version}`);
+  for (const rel of [
+    'Install-WB-OneClick.ps1',
+    'patch-cli-layer.ps1',
+    'patch-inject-layer.ps1',
+    'verify-install.ps1',
+    'selftest-upgrade.ps1',
+    'materials/IDENTITY.md',
+    'pristine-seed',
+  ]) {
+    assert.ok(fs.existsSync(path.join(WB_PACK, rel)), `缺 ${rel}`);
+  }
+  assert.ok(!fs.existsSync(path.join(WB_PACK, '_quarantine')), '不得打进本机 quarantine');
+  const inst = fs.readFileSync(path.join(WB_PACK, 'Install-WB-OneClick.ps1'), 'utf-8');
+  assert.match(inst, /\[7\/7\]/, '必须有 [7/7] 注入层步骤');
+  assert.match(inst, /patch-inject-layer\.ps1/);
+  assert.match(inst, /Find-AllProgs|只有命令行显式给了 -WBProgPath/);
+  const cli = fs.readFileSync(path.join(WB_PACK, 'patch-cli-layer.ps1'), 'utf-8');
+  assert.match(cli, /IsSandbox/, '必须有 Temp/wb-selftest 沙箱硬防护');
+});
+
+const AG_PACK = path.join(__dirname, '..', 'packed-packs', 'anti-gravity');
+
+test('DEPLOY_PLANS.anti-gravity 直调 Install-AntiGravity.ps1 且禁弹窗', () => {
+  const plan = core.DEPLOY_PLANS['anti-gravity'];
+  assert.strictEqual(plan.install.file, 'Install-AntiGravity.ps1');
+  assert.strictEqual(plan.install.kind, 'ps1');
+  assert.ok(plan.install.args.includes('-NoOpenLinks'));
+  assert.strictEqual(plan.uninstall.file, 'Uninstall.ps1');
+});
+
+test('内嵌反重力包是 v3.2 且三通道素材齐', () => {
+  const readme = fs.readFileSync(path.join(AG_PACK, 'README-CN.txt'), 'utf-8');
+  assert.match(readme.split(/\r?\n/)[0] || '', /v3\.2/, 'README 第一行必须是 v3.2');
+  const ver = core.extractVersion(AG_PACK, core.PACKS.find((p) => p.id === 'anti-gravity').versionSources);
+  assert.strictEqual(ver.version, '3.2', `卡片版本必须是 3.2，实得 ${ver && ver.version}`);
+  for (const rel of [
+    'Install-AntiGravity.ps1',
+    'verify-install.ps1',
+    'selftest-upgrade.ps1',
+    'Uninstall.ps1',
+    'materials/rules/ag-armor.md',
+    'materials/plugin/skills/coldbrew-breakout/SKILL.md',
+    'pristine-seed/app-update.yml.orig',
+  ]) {
+    assert.ok(fs.existsSync(path.join(AG_PACK, rel)), `缺 ${rel}`);
+  }
+  assert.ok(!fs.existsSync(path.join(AG_PACK, 'backups')), '不得打进本机 backups');
+  const inst = fs.readFileSync(path.join(AG_PACK, 'Install-AntiGravity.ps1'), 'utf-8');
+  assert.match(inst, /\[7\/7\]|\[6\/7\]/, '必须有分步安装');
+  assert.match(inst, /ag_patch_agents\.ps1/);
+  const patch = fs.readFileSync(path.join(AG_PACK, 'materials', 'scripts', 'ag_patch_agents.ps1'), 'utf-8');
+  assert.match(patch, /GeminiConfig/, '必须支持隔离配置根');
+});
+
+const CURSOR_PACK = path.join(__dirname, '..', 'packed-packs', 'cursor');
+
+test('内嵌 Cursor 包是懒人包 v1.2 且 18 条规则齐', () => {
+  const readme = fs.readFileSync(path.join(CURSOR_PACK, 'README-CN.txt'), 'utf-8');
+  assert.match(readme.split(/\r?\n/)[0] || '', /v1\.2/, 'README 第一行必须是 v1.2');
+  const ver = core.extractVersion(CURSOR_PACK, core.PACKS.find((p) => p.id === 'cursor').versionSources);
+  assert.strictEqual(ver.version, '1.2', `卡片版本必须是 1.2，实得 ${ver && ver.version}`);
+  for (const rel of [
+    'setup.py',
+    '一键安装.bat',
+    '一键卸载.bat',
+    '使用说明.txt',
+    'materials/tools/cursor_tamper_proxy.py',
+    'materials/rules/shiyi-00-core.mdc',
+    'materials/rules/shiyi-G47-sandbox.mdc',
+    'materials/rules/shiyi-T1-tamper.mdc',
+    'materials/rules/shiyi-N1-normalize.mdc'
+  ]) {
+    assert.ok(fs.existsSync(path.join(CURSOR_PACK, rel)), `缺 ${rel}`);
+  }
+  const mdc = fs.readdirSync(path.join(CURSOR_PACK, 'materials', 'rules')).filter((n) => n.endsWith('.mdc'));
+  assert.strictEqual(mdc.length, 18, `规则必须 18 条，实得 ${mdc.length}`);
+  assert.ok(!fs.existsSync(path.join(CURSOR_PACK, 'install_cursor.py')), '不得残留旧 install_cursor.py');
+  assert.ok(!fs.existsSync(path.join(CURSOR_PACK, '实测记录')), '不得打进实测记录');
+  const setup = fs.readFileSync(path.join(CURSOR_PACK, 'setup.py'), 'utf-8');
+  assert.match(setup, /PACK_VERSION = "v1\.2"/);
+  assert.match(setup, /--no-open/);
+  assert.match(setup, /--root/);
+});
+
+const WBAI_PACK = path.join(__dirname, '..', 'packed-packs', 'workbuddy-ai');
+
+test('DEPLOY_PLANS.workbuddy-ai 直调 Install-WBAI-LazyPack.ps1 且禁弹窗', () => {
+  const plan = core.DEPLOY_PLANS['workbuddy-ai'];
+  assert.strictEqual(plan.install.file, 'Install-WBAI-LazyPack.ps1');
+  assert.strictEqual(plan.install.kind, 'ps1');
+  assert.ok(plan.install.args.includes('-NoOpenLinks'));
+  assert.strictEqual(plan.uninstall.file, 'Install-WBAI-LazyPack.ps1');
+  assert.ok(plan.uninstall.args.includes('-Uninstall'));
+  assert.ok(plan.uninstall.args.includes('-NoOpenLinks'));
+  const labels = plan.evidence.map((e) => e.label).join('|');
+  assert.ok(/\.workbuddy-ai/.test(labels), 'evidence 必须锁国际版配置根');
+  assert.ok(!/\.workbuddy\//.test(labels), '不得落到国内版 .workbuddy');
+});
+
+test('内嵌 WorkBuddy AI 国际版包是 v1.3 且必备文件齐', () => {
+  const readme = fs.readFileSync(path.join(WBAI_PACK, 'README-CN.txt'), 'utf-8');
+  assert.match(readme.split(/\r?\n/)[1] || readme.split(/\r?\n/)[0] || '', /v1\.3/, 'README 必须是 v1.3');
+  const ver = core.extractVersion(WBAI_PACK, core.PACKS.find((p) => p.id === 'workbuddy-ai').versionSources);
+  assert.strictEqual(ver.version, '1.3', `卡片版本必须是 1.3，实得 ${ver && ver.version}`);
+  for (const rel of [
+    'Install-WBAI-LazyPack.ps1',
+    'Verify-LazyPack.ps1',
+    '一键安装-双击这里.cmd',
+    '卸载-恢复原状.cmd',
+    'materials/IDENTITY.md',
+    'materials/MEMORY.md',
+    'materials/SOUL-snippet.txt',
+    'tools/verify_all.py'
+  ]) {
+    assert.ok(fs.existsSync(path.join(WBAI_PACK, rel)), `缺 ${rel}`);
+  }
+  assert.ok(!fs.existsSync(path.join(WBAI_PACK, 'DATA-LAYER-VERIFY.md')), '不得打进本机数据层报告');
+  const inst = fs.readFileSync(path.join(WBAI_PACK, 'Install-WBAI-LazyPack.ps1'), 'utf-8');
+  assert.match(inst, /PACK_VERSION|v1\.3|懒人包 v1\.3/);
+  assert.match(inst, /-NoOpenLinks/);
+  assert.match(inst, /-WBHomePath/);
+  assert.match(inst, /\.workbuddy-ai/);
 });

@@ -10,11 +10,22 @@ export default function Hero({ packs, lastScanAt, root }: { packs: Pack[]; lastS
 
   return (
     <div className="hero">
+      <div className="hero-sheen" aria-hidden="true" />
+      <div className="hero-sparkles" aria-hidden="true">
+        <i />
+        <i />
+        <i />
+        <i />
+        <i />
+        <i />
+        <i />
+        <i />
+      </div>
       <MascotCat size={86} />
       <div className="hero-text">
         <h1>苏苏 AI超频 · Susu AI Overclock</h1>
         <p>
-          七大 AI 工具包的一键部署、基线对比与大模型会话超频监控台。支持真实图标提取、一键调用包内脚本、四层穿透透视（文件/配置/进程/模型会话问答放行与拒绝分析）。
+          八大 AI 工具包的一键部署、基线对比与大模型会话超频监控台。支持真实图标提取、一键调用包内脚本、四层穿透透视（文件/配置/进程/模型会话问答放行与拒绝分析）。
         </p>
         <p style={{ marginTop: 8, fontSize: 12, color: 'var(--ink-faint)' }}>
           当前根目录：{root || '（尚未选择）'} · 最近扫描：{formatTime(lastScanAt)}

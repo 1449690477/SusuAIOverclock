@@ -4,6 +4,70 @@
 
 ---
 
+## [1.5.4] — 2026-09-18
+
+### 新增 WorkBuddy AI 国际版破甲卡片
+
+- 用独立包 `WorkBuddyAI-石井懒人包-v1.3` 新增卡片，不替换国内版 WorkBuddy v4.4。
+- 配置根锁死 `~/.workbuddy-ai`，与国内版 `~/.workbuddy` 互不覆盖。
+- 软件安装/卸载直调 `Install-WBAI-LazyPack.ps1 -NoOpenLinks` / `-Uninstall`，避开 cmd 的 pause 与开官网。
+- 卡片版本读 `README-CN.txt` / 安装器头的 `v1.3`。
+- 应用版本升至 `1.5.4`。
+
+---
+
+## [1.5.3] — 2026-09-18
+
+### 内嵌 Cursor 包同步懒人包 v1.2
+
+- 用独立包 `cursor 破`（v1.2）整包替换内嵌 Cursor 破甲包（原内嵌为 v3.6 的 `install_cursor.py` 线）。
+- 新包走 `setup.py`：18 条规则装到 Cursor 官方用户规则目录 `~/.cursor/rules/`，可选响应篡改代理默认关闭。
+- 软件安装/卸载直调 `setup.py install --no-open` / `uninstall`，避开 bat 的 `pause` 与装完开官网。
+- 卡片版本优先读 `README-CN.txt` / `使用说明.txt` 的 `v1.2`。
+- 不打入旧包 `实测记录/` 与已废弃的 `install_cursor.py` / `patch_cursor_v32.py`。
+- 应用版本升至 `1.5.3`。
+
+---
+
+## [1.5.2] — 2026-09-18
+
+### 内嵌反重力包同步 v3.2
+
+- 用独立包 `anti-gravity-v3.2` 整包替换内嵌反重力破甲包（原内嵌为 v3.0）。
+- 同步 AGL1 三通道：`rules/ag-armor.md` 常驻 + `skills/coldbrew-breakout` 按需 + `plugins` 兼容；旧同名 skill 自动挪走解除遮蔽。
+- 卡片版本优先读 `README-CN.txt` 的 `v3.2`。
+- 不打入本机 `backups/` 与 `materials/evidence/` 现场记录。
+- 应用版本升至 `1.5.2`。
+- 界面从奶油粉绿甜品风收成瓷白 + 冰蓝高级感：布局圆角不动，主色/阴影/按钮/侧栏/词库/弹窗统一冷色。
+- 补蓝白律动装饰：背景光球/斜扫光带/星点、标题栏流光、卡片与按钮扫光、侧栏呼吸线、导航点与徽章脉动。
+
+---
+
+## [1.5.1] — 2026-09-18
+
+### 内嵌 WorkBuddy 包同步 v4.4
+
+- 用独立包 `wb破4.4` 整包替换内嵌 WorkBuddy 破甲包（原内嵌为 v4.0）。
+- 同步注入层去对抗签名、`Find-AllProgs` 多安装根、Temp 沙箱禁止自扫真机、`verify-install.ps1` / `selftest-upgrade.ps1`。
+- Omen 桥接不再作为安装必备文件，保留在 `_deprecated-omen-bridge`。
+- 软件安装/卸载直调 `Install-WB-OneClick.ps1 -NoOpenLinks`，避开 bat 的 `pause` 与弹窗。
+- 卡片版本优先读 `README-CN.txt` 的 `v4.4`。
+- 应用版本升至 `1.5.1`。
+
+---
+
+## [1.5.0] — 2026-09-18
+
+### 内嵌 Codex 包同步 v10.4
+
+- 用独立包 `codex-break-kit-v10`（v10.4）整包替换内嵌「冷咖啡石井」Codex 包。
+- 保留桌面端已验证的硬约束：`deepseek-v4-flash-vision-exp` 串行工具调用、装后反夹层硬自检、软件安装路径 `-SkipAstra6`（不扫 Desktop/Documents）、1.4 / 独立 v10.4 hook 哈希可升级。
+- 安装器沿用 v10.2 `ConvertTo-DeepDict`，干净机器与已有配置机器都能过 `[4/9] hooks.json`。
+- 卡片版本读取改为 README 的 `破甲包 v10.4`，不再误读安装器注释里的 `v10.2`。
+- 应用版本升至 `1.5.0`。
+
+---
+
 ## [1.4.0] — 2026-09-11
 
 ### DSH v5.7.0 同步

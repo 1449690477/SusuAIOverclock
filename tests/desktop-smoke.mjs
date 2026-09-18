@@ -217,9 +217,9 @@ if (!validRoot) {
     (await win2.locator('[data-testid="lib-tab-manage"]').count()) === 1 &&
     (await win2.locator('[data-testid="lib-tab-guide"]').count()) === 1);
 
-  // 注入平台栏：七个平台按钮
+  // 注入平台栏：八个平台按钮
   const platCount = await win2.locator('[data-testid^="lib-plat-"]').count();
-  check('注入平台栏有七个平台', platCount === 7, `实际 ${platCount}`);
+  check('注入平台栏有八个平台', platCount === 8, `实际 ${platCount}`);
 
   // 替换/叠加模式切换存在且默认替换
   check('替换/叠加模式切换存在',
@@ -269,7 +269,7 @@ if (!validRoot) {
   await win2.locator('[data-testid="lib-manage"]').waitFor({ timeout: 10000 });
   check('注入管理页可打开', (await win2.locator('[data-testid="lib-manage"]').count()) === 1);
   const mgmtCards = await win2.locator('[data-testid^="lib-mgmt-"]').count();
-  check('注入管理列出七个平台', mgmtCards === 7, `实际 ${mgmtCards}`);
+  check('注入管理列出八个平台', mgmtCards === 8, `实际 ${mgmtCards}`);
 
   // 说明页
   await win2.locator('[data-testid="lib-tab-guide"]').click();

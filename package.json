@@ -1,8 +1,8 @@
 {
   "name": "dango-desk",
-  "version": "1.4.0",
+  "version": "1.5.4",
   "private": true,
-  "description": "苏苏 AI超频 - 七大工具包统一管理与模型会话监控",
+  "description": "苏苏 AI超频 - 八大工具包统一管理与模型会话监控",
   "main": "electron/main.cjs",
   "author": "Wanghan",
   "license": "MIT",
@@ -20,7 +20,7 @@
     "smoke": "node tests/desktop-smoke.mjs",
     "test": "node --test tests/core.test.cjs",
     "patch:portable": "node scripts/apply-portable-patch.cjs",
-    "pack:portable": "npm run patch:portable && vite build && electron-builder --win portable --x64",
+    "pack:portable": "npm run patch:portable && vite build && node scripts/pack-portable.cjs",
     "scrape:library": "node scripts/scrape-details.cjs",
     "snapshot:library": "node scripts/build-library-snapshot.cjs",
     "refresh:library": "npm run scrape:library && npm run snapshot:library"
@@ -37,6 +37,7 @@
     "@vitejs/plugin-react": "^4.3.3",
     "electron": "^33.0.2",
     "electron-builder": "^25.1.8",
+    "esbuild": "^0.21.5",
     "playwright": "^1.48.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -50,11 +51,21 @@
       "buildResources": "build",
       "output": "release"
     },
+    "beforeBuild": "./scripts/before-build.cjs",
+    "electronDist": "node_modules/electron/dist",
     "files": [
       "electron/**/*",
       "dist-electron/**/*",
       "build/**/*",
-      "package.json"
+      "package.json",
+      "node_modules/playwright-core/**/*",
+      "node_modules/http-proxy-agent/**/*",
+      "node_modules/debug/**/*",
+      "node_modules/ms/**/*",
+      "node_modules/proxy-agent-negotiate/**/*"
+    ],
+    "asarUnpack": [
+      "node_modules/playwright-core/**/*"
     ],
     "extraResources": [
       {
@@ -63,7 +74,11 @@
         "filter": [
           "**/*",
           "!**/backups/**",
+          "!**/evidence/**",
           "!**/__pycache__/**",
+          "!**/_quarantine/**",
+          "!**/_cli-layer-state.json",
+          "!**/_inject-layer-state.json",
           "!**/*.pyc"
         ]
       },
@@ -86,8 +101,12 @@
         }
       ]
     },
+    "nsis": {
+      "packElevateHelper": true
+    },
     "portable": {
-      "artifactName": "SusuAIOverclock-${version}-portable.exe"
+      "artifactName": "SusuAIOverclock-${version}-portable.exe",
+      "unpackDirName": "SusuAIOverclockPortable"
     }
   }
 }

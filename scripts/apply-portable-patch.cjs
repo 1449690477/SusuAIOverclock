@@ -21,7 +21,30 @@ const TARGET = path.join(TARGET_DIR, 'portable.nsi');
 const BACKUP = path.join(TARGET_DIR, 'portable.nsi.orig');
 const MARKER = '苏苏 AI超频 · 加速版 portable 启动器';
 
+function restore7za() {
+  const destDir = path.join(ROOT, 'node_modules', '7zip-bin', 'win', 'x64');
+  const dest = path.join(destDir, '7za.exe');
+  const cache7za = path.join(
+    process.env.LOCALAPPDATA || '',
+    'electron-builder', 'Cache', '7zip@1.0.0', '7zip-win-x64-a34pt', 'bin', '7za.exe'
+  );
+  if (!fs.existsSync(cache7za)) {
+    console.error('[patch] 找不到 7za.exe 缓存: ' + cache7za);
+    process.exit(1);
+  }
+  fs.mkdirSync(destDir, { recursive: true });
+  const cacheSize = fs.statSync(cache7za).size;
+  const destOk = fs.existsSync(dest) && fs.statSync(dest).size === cacheSize;
+  if (destOk) {
+    console.log('[patch] 7za.exe 已就绪 (' + cacheSize + ' bytes)');
+    return;
+  }
+  fs.copyFileSync(cache7za, dest);
+  console.log('[patch] 已从 electron-builder 缓存恢复 7za.exe (' + cacheSize + ' bytes)');
+}
+
 function main() {
+  restore7za();
   if (!fs.existsSync(SRC)) {
     console.error('[patch] 源模板不存在: ' + SRC);
     process.exit(1);

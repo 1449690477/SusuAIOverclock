@@ -36,6 +36,7 @@ const PLAT_LABEL: Record<string, string> = {
   codex: 'Codex',
   dsh: 'DSH',
   workbuddy: 'WorkBuddy',
+  'workbuddy-ai': 'WorkBuddy AI',
   opencode: 'OpenCode',
   'anti-gravity': 'Anti-Gravity'
 };

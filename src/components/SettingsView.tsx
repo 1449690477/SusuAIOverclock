@@ -25,8 +25,8 @@ export default function SettingsView({
       <div className="panel" style={{ marginBottom: 18 }}>
         <h2>根目录</h2>
         <p className="desc">
-          这七个工具包必须在同一个父目录下，各自一个子文件夹（codex / codex-panghu / cursor / dsh / opencode / workbuddy /
-          anti-gravity）。本软件本体不含这些包，换台电脑重新选一次目录即可。
+          这些工具包各自一个子文件夹（codex / codex-panghu / cursor / dsh / opencode / workbuddy /
+          workbuddy-ai / anti-gravity）。便携版已内嵌全套；自选根目录时换台电脑重新选一次即可。
         </p>
 
         <div className="setting-row">

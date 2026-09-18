@@ -3,12 +3,12 @@ import { formatTime } from '../utils';
 import type { ActivityItem } from '../types';
 
 const KIND_LABEL: Record<string, { text: string; color: string }> = {
-  root: { text: '目录', color: 'var(--soda-deep, #2f9fd0)' },
-  scan: { text: '扫描', color: '#6f5bbd' },
-  baseline: { text: '基线', color: '#3fae72' },
-  'verify-ok': { text: '校验', color: '#3fae72' },
-  'verify-diff': { text: '变更', color: '#b57d16' },
-  report: { text: '报告', color: '#e8607f' }
+  root: { text: '目录', color: 'var(--sakura-deep)' },
+  scan: { text: '扫描', color: 'var(--kuromi)' },
+  baseline: { text: '基线', color: 'var(--matcha-deep)' },
+  'verify-ok': { text: '校验', color: 'var(--matcha-deep)' },
+  'verify-diff': { text: '变更', color: '#9a7a32' },
+  report: { text: '报告', color: 'var(--soda)' }
 };
 
 export default function ActivityView({ items }: { items: ActivityItem[] }) {
@@ -17,7 +17,7 @@ export default function ActivityView({ items }: { items: ActivityItem[] }) {
       <h2>活动记录</h2>
       <p className="desc">
         只记录这个管理台自己做过的事：选目录、扫描、建立基线、检查变更、导出报告。
-        它不知道、也不记录那七个包在别的软件里的运行情况。
+        它不知道、也不记录那些包在别的软件里的运行情况。
       </p>
       {items.length === 0 ? (
         <p className="desc" style={{ margin: 0 }}>
