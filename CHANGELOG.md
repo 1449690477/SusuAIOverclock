@@ -13,6 +13,8 @@
 - 软件安装/卸载直调 `Install-WBAI-LazyPack.ps1 -NoOpenLinks` / `-Uninstall`，避开 cmd 的 pause 与开官网。
 - 卡片版本读 `README-CN.txt` / 安装器头的 `v1.3`。
 - 应用版本升至 `1.5.4`。
+- 工具箱计数改为 `已找到 / 卡片总数`（八包不再显示成 `/6`）。
+- GitHub 仓库补齐 v1.5.4 冰蓝界面截图、项目介绍与本页更新日志入口。
 
 ---
 

@@ -33,7 +33,7 @@ export default function Hero({ packs, lastScanAt, root }: { packs: Pack[]; lastS
       </div>
       <div className="hero-stats">
         <div className="stat">
-          <div className="stat-num">{found}/6</div>
+          <div className="stat-num">{found}/{packs.length || 8}</div>
           <div className="stat-label">目录已找到</div>
         </div>
         <div className="stat">

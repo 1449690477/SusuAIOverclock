@@ -1,11 +1,38 @@
 # v1.5.4 — 新增 WorkBuddy AI 国际版破甲卡片
 
-## 同步内容
+Windows 便携桌面端。八张卡片一张冰蓝工作台：Codex 10.4 / 胖虎 / Cursor 1.2 / DSH 5.7.0 / OpenCode / WorkBuddy 4.4 / WorkBuddy AI 国际版 1.3 / 反重力 3.2。
+
+## 下载
+
+- [SusuAIOverclock-1.5.4-portable.exe](https://github.com/1449690477/SusuAIOverclock/releases/download/v1.5.4/SusuAIOverclock-1.5.4-portable.exe)（约 114 MB，免安装）
+- SHA-256：`EB77718675E041E0ECC958146AEC072A9B144EDE87B8EC0036BF7C4665580CCB`
+
+首次运行若弹「已保护你的电脑」，点 **更多信息 → 仍要运行**。
+
+## 界面
+
+![工具箱](https://raw.githubusercontent.com/1449690477/SusuAIOverclock/main/docs/screenshots/toolbox.png)
+
+![破甲词库](https://raw.githubusercontent.com/1449690477/SusuAIOverclock/main/docs/screenshots/library.png)
+
+![深度验证](https://raw.githubusercontent.com/1449690477/SusuAIOverclock/main/docs/screenshots/deep-verify.png)
+
+## 本版更新
 
 - 新增内嵌包 `workbuddy-ai`（懒人包 v1.3），不替换国内版 WorkBuddy。
 - 软件侧直调 `Install-WBAI-LazyPack.ps1 -NoOpenLinks` / `-Uninstall`。
 - 配置根 `~/.workbuddy-ai`，与 `~/.workbuddy` 隔离。
 - 应用版本升至 `1.5.4`。
+- 工具箱计数改为 `已找到 / 卡片总数`。
+
+## 1.5 系列
+
+- **1.5.3** Cursor 懒人包 v1.2
+- **1.5.2** 反重力 v3.2 + 冰蓝 UI
+- **1.5.1** WorkBuddy 国内版 v4.4
+- **1.5.0** Codex 冷咖啡石井 v10.4
+
+完整记录见仓库 [`CHANGELOG.md`](https://github.com/1449690477/SusuAIOverclock/blob/main/CHANGELOG.md)。
 
 ## 发布前校验
 

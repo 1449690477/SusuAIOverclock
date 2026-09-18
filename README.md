@@ -4,13 +4,16 @@
 
 **八大 AI 工具包统一部署台 · 四层穿透验证 · 模型会话超频监控**
 
-Windows x64 桌面端 · Electron 33 + React 18 + TypeScript 5 · 免安装单文件便携版
+Windows x64 桌面端 · Electron 33 + React 18 + TypeScript 5 · 冰蓝瓷白界面 · 免安装单文件便携版
 
 [![Platform](https://img.shields.io/badge/platform-Windows%20x64-0078D4?style=flat-square)](https://github.com/1449690477/SusuAIOverclock/releases)
 [![Electron](https://img.shields.io/badge/Electron-33-47848F?style=flat-square&logo=electron&logoColor=white)](https://www.electronjs.org/)
 [![React](https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react&logoColor=black)](https://react.dev/)
-[![Version](https://img.shields.io/badge/version-1.5.4-2ea44f?style=flat-square)](https://github.com/1449690477/SusuAIOverclock/releases)
+[![Version](https://img.shields.io/badge/version-1.5.4-2ea44f?style=flat-square)](https://github.com/1449690477/SusuAIOverclock/releases/tag/v1.5.4)
+[![Downloads](https://img.shields.io/github/downloads/1449690477/SusuAIOverclock/total?style=flat-square&color=6eb4ee)](https://github.com/1449690477/SusuAIOverclock/releases)
 [![License](https://img.shields.io/badge/license-MIT-97CA00?style=flat-square)](./LICENSE)
+
+**最新版：** [下载 `SusuAIOverclock-1.5.4-portable.exe`](https://github.com/1449690477/SusuAIOverclock/releases/download/v1.5.4/SusuAIOverclock-1.5.4-portable.exe)
 
 </div>
 
@@ -29,50 +32,73 @@ Windows x64 桌面端 · Electron 33 + React 18 + TypeScript 5 · 免安装单�
 
 ## 这是什么
 
-一个 Windows 桌面工作台，把散落各处的 **8 个 AI 客户端工具包**收进一个界面统一管理：
+一个 Windows 桌面工作台，把散落各处的 **8 个 AI 客户端工具包**收进同一个冰蓝界面：
 
-`codex` · `cursor` · `dsh` · `opencode` · `workbuddy` · `workbuddy-ai` · `anti-gravity`
+| 卡片 | 内嵌包 | 配置根 |
+| :-- | :-- | :-- |
+| Codex 破甲包 · 冷咖啡石井 | v10.4 | `~/.codex` |
+| Codex 破甲包 · 胖虎 | v5.0 | 独立 hooks 分支 |
+| Cursor 破甲包 | 懒人包 v1.2 | `~/.cursor/rules` |
+| DSH 破甲懒人包 | v5.7.0 | `~/.dsh` |
+| OpenCode 破甲包 | 内嵌 | 包内脚本 |
+| WorkBuddy 破甲包 | v4.4 国内版 | `~/.workbuddy` |
+| WorkBuddy AI 国际版 | 懒人包 v1.3 | `~/.workbuddy-ai` |
+| 反重力破甲包 | v3.2 | `~/.gemini` |
 
-它做的事很具体：**认路径 → 调脚本 → 验效果 → 记基线**。所有安装/卸载动作都是调用各包目录里**自带的脚本**，软件本身不生成、不改写任何注入内容。
+它做的事很具体：**认路径 → 调脚本 → 验效果 → 记基线**。所有安装 / 卸载都是调用各包目录里**自带的脚本**，软件本身不生成、不改写任何注入内容。国内 WorkBuddy 与国际 WorkBuddy AI 是两张独立卡片，配置根互不覆盖。
+
+---
+
+## 界面展示
+
+当前界面是 **v1.5.4 冰蓝瓷白**：背景光球 / 斜扫光带 / 标题栏流光，八张卡片一张工作台。
 
 ![工具箱总览](./docs/screenshots/toolbox.png)
+
+![破甲词库](./docs/screenshots/library.png)
+
+![包详情](./docs/screenshots/pack-detail.png) ![WorkBuddy AI 国际版卡片](./docs/screenshots/workbuddy-ai.png)
+
+![深度验证](./docs/screenshots/deep-verify.png)
+
+![导入包](./docs/screenshots/import.png)
+
+![设置](./docs/screenshots/settings.png)
 
 ---
 
 ## 核心能力
 
-### 1. 六包统一管理
+### 1. 八包统一管理
 
 - **自动识别安装路径**：扫常见安装目录 + 配置目录，找不到才让你手动选
 - **真实平台图标**：直接从各客户端 exe 提取，不是手绘贴图
-- **一键安装 / 卸载**：调用包内自带的 `Install-*` / `Uninstall-*` 脚本，单包或全部，日志实时滚屏
-- **装前备份**：可把 `~/.codex`、`~/.dsh`、`~/.gemini` 等配置目录整份复制到本地备份区
-- **包信息自动读取**：从 `package.json` / `install-manifest-*.json` / 安装脚本顶部注释里解析版本号与来源
+- **一键安装 / 卸载**：调用包内自带的 `Install-*` / `Uninstall-*` / `setup.py`，单包或全部，日志实时滚屏
+- **装前备份**：可把 `~/.codex`、`~/.dsh`、`~/.gemini`、`~/.workbuddy`、`~/.workbuddy-ai` 等配置目录整份复制到本地备份区
+- **包信息自动读取**：从 `package.json` / `README-CN.txt` / 安装脚本顶部注释里解析版本号与来源
 - **基线快照比对**：给每个包建 SHA-256 基线，之后随时比对，精确列出新增 / 删除 / 修改
-- **Markdown 报告导出**：六包状态一键导出成检查报告
+- **Markdown 报告导出**：八包状态一键导出成检查报告
 
 ### 2. 四层穿透验证（L1 → L4）
 
-对任意卡片点「深度验证」，按四层逐级诊断，任一失败即停，并告诉你**在哪一层、为什么、怎么修**：
+对任意卡片点「监控」，按四层逐级诊断，任一失败即停，并告诉你**在哪一层、为什么、怎么修**：
 
 | 层 | 检查内容 | 失败意味着 |
 | :-- | :-- | :-- |
-| **L1 文件层** | 破甲文件是否写到位 | 没装 / 被覆盖 → 回去点「安装破甲」 |
+| **L1 文件层** | 破甲文件是否写到位 | 没装 / 被覆盖 → 回去点「安装」 |
 | **L2 配置层** | 配置文件可解析且已注册 | 配置损坏 → 核对路径 / codex 的 models.json 枚举 |
 | **L3 进程层** | 客户端 / CLI 能否启动 | 没装好 / 路径变了 / 被占用 |
 | **L4 会话层** | 发激活口令、抓真实回复、分析特征 | 模型拒绝 / 无回复 / 特征未命中 |
 
 - **CLI 通道**（codex）：真用 `codex exec` 非交互发口令抓 stdout（`approval_policy=never` + `sandbox_mode=read-only`，不动文件）
-- **GUI 通道**（cursor / workbuddy / anti-gravity / opencode）：playwright 短暂拉起客户端，定位输入框发口令抓回复
+- **GUI 通道**（cursor / workbuddy / workbuddy-ai / anti-gravity / opencode）：playwright 短暂拉起客户端，定位输入框发口令抓回复
 - 回复分析维度：石井特征 / ROUTE 标记 / 思考过程 / 模型拒绝 / AI 声明残留 —— 全部命中才判「真生效」
-
-![深度验证](./docs/screenshots/deep-verify.png)
 
 > GUI 通道会把对应客户端短暂顶到前台几秒，验证完自动关闭，属正常现象。
 
 ### 3. 导入引擎（支持单个规则文件）
 
-不只有内置包 —— 你自己的破甲规则也能导进来：
+不只有内置包 —— 你自己的规则也能导进来：
 
 - **导入包目录**：识别整个包，按平台特征打分自动归属
 - **导入单个规则文件**：`.md` / `.mdc` / `.txt` / `.json` / `.yaml` / `.ps1` / `.py` 等文本规则文件直接拖进来，按文件名 + 内容特征识别目标平台
@@ -81,15 +107,15 @@ Windows x64 桌面端 · Electron 33 + React 18 + TypeScript 5 · 免安装单�
   - `append`：以 `<!-- shiyi-imported:name:start/end -->` 标记块追加，追加前自动备份
 - **识别不了也不硬塞**：候选同分或 0 分时不预选，由你手选平台，避免误注入
 
-![导入包](./docs/screenshots/import.png)
-
 ### 4. 内嵌包开箱即用
 
-打包时把 `packed-packs/` 打进 `resources/packs`（**不进 asar**，因为脚本需要真实文件系统）。首次启动无需选目录，六个包直接可用。
+打包时把 `packed-packs/` 打进 `resources/packs`（**不进 asar**，因为脚本需要真实文件系统）。首次启动无需选目录，八个包直接可用。
 
 路径解析三级降级：**imported（导入的） > external（外部目录） > embedded（内嵌）**，卡片上如实标注当前来源。
 
-![内嵌开箱即用](./docs/screenshots/embedded.png)
+### 5. 破甲词库
+
+内置 3134 条提示词、21 个分类，可注入到 Cursor / Codex / DSH / WorkBuddy / OpenCode / Anti-Gravity。词库注入和「导入规则」分区存放，清空词库不会误删导入块。
 
 ---
 
@@ -97,7 +123,7 @@ Windows x64 桌面端 · Electron 33 + React 18 + TypeScript 5 · 免安装单�
 
 ### 方式一：下载便携版（推荐）
 
-从 [Releases](https://github.com/1449690477/SusuAIOverclock/releases) 下载 `SusuAIOverclock-1.5.4-portable.exe`，双击即用，免安装。
+从 [Releases](https://github.com/1449690477/SusuAIOverclock/releases/tag/v1.5.4) 下载 `SusuAIOverclock-1.5.4-portable.exe`，双击即用，免安装。
 
 > 首次运行 Windows 会弹「已保护你的电脑」——点 **更多信息 → 仍要运行**。原因是没有代码签名证书，不是软件有问题。
 
@@ -118,7 +144,7 @@ npm run smoke          # playwright 真机冒烟
 npm run pack:portable  # 产出 release/SusuAIOverclock-<version>-portable.exe
 ```
 
-> 仓库不含 `packed-packs/`（377 MB 的工具包本体，不便入库）。要构建带内嵌包的完整版，把六个包放到 `packed-packs/<平台id>/` 下再打包；否则软件仍可用「选择根目录」加载外部包。
+> 仓库不含 `packed-packs/`（工具包本体体积大，不便入库）。要构建带内嵌包的完整版，把八个包放到 `packed-packs/<平台id>/` 下再打包；否则软件仍可用「选择根目录」加载外部包。
 
 ### 命令行参数
 
@@ -133,9 +159,42 @@ SusuAIOverclock-1.5.4-portable.exe
 
 ---
 
+## 更新日志
+
+完整记录见 [`CHANGELOG.md`](./CHANGELOG.md)。1.5 系列摘要：
+
+### [1.5.4] — 2026-09-18 · 当前
+
+- 新增 **WorkBuddy AI 国际版** 独立卡片（懒人包 v1.3），不替换国内 WorkBuddy v4.4
+- 配置根锁死 `~/.workbuddy-ai`，与 `~/.workbuddy` 隔离
+- 安装 / 卸载直调 `Install-WBAI-LazyPack.ps1 -NoOpenLinks`
+
+### [1.5.3] — 2026-09-18
+
+- Cursor 内嵌包同步懒人包 **v1.2**（18 条用户规则）
+- 直调 `setup.py install --no-open` / `uninstall`
+
+### [1.5.2] — 2026-09-18
+
+- 反重力内嵌包同步 **v3.2**（AGL1 三通道）
+- 界面从奶油粉绿收成 **瓷白 + 冰蓝**，补律动光效装饰
+
+### [1.5.1] — 2026-09-18
+
+- 国内 WorkBuddy 内嵌包同步 **v4.4**
+
+### [1.5.0] — 2026-09-18
+
+- Codex「冷咖啡石井」内嵌包同步 **v10.4**
+
+更早版本（1.4.0 DSH v5.7.0 同步、便携启动加速、导入引擎等）见完整 changelog。
+
+---
+
 ## 界面构成
 
-- **工具箱**：六张卡片 + 搜索 + 筛选（全部 / 已找到 / 有变更）
+- **工具箱**：八张卡片 + 搜索 + 筛选（全部 / 已找到 / 有变更）
+- **破甲词库**：分类浏览、注入管理、使用说明
 - **详情弹窗**：版本来源、文件统计、预期条目检查、最近一次比对明细
 - **深度验证弹窗**：L1–L4 逐层进度与失败定位
 - **活动记录**：本软件自己做过的事（选目录、扫描、建基线、查变更、导报告）
@@ -164,7 +223,7 @@ SusuAIOverclock-1.5.4-portable.exe
 | 弹「已保护你的电脑」/ 未知发布者 | 无代码签名证书 | 更多信息 → 仍要运行 |
 | 杀软报毒 / 拦截 | 脚本类工具包的常见误报 | 把 exe 与包目录加入白名单 |
 | 第一次启动慢（约 6 秒） | 需把内嵌包解压到本地缓存 | 正常现象，之后每次约 0.8 秒 |
-| 缓存目录占 663 MB | 加速的代价，缓存六包解压结果 | 可随时删除，下次重新解压 |
+| 缓存目录占约 766 MB | 加速的代价，缓存八包解压结果 | 可随时删除，下次重新解压 |
 | `TypeError: Cannot read properties of undefined (reading 'app')` | 父进程污染了 `ELECTRON_RUN_AS_NODE=1`，electron.exe 退化成纯 Node 模式 | 清掉该环境变量，或直接双击 exe |
 | `Error: Failed to get 'userData' path` | `%APPDATA%` 被污染或不存在 | v1.2+ 已自动降级到 `~/.dango-desk` / 临时目录 |
 | 渲染进程 / GPU 进程 fatal | 无 GPU 或受限会话 | 默认保留硬件加速；极少数远程桌面 / 老旧显卡黑屏时再单独排查 |
@@ -175,8 +234,8 @@ SusuAIOverclock-1.5.4-portable.exe
 ## 测试
 
 ```bash
-npm test     # 38 个 core 单元测试（单文件识别 / 打分 / 路径解析 / 导入落地）
-npm run smoke # 真机冒烟：引导空态 + 六卡片部署 + 内嵌开箱即用 + 深度验证全流程
+npm test     # core 单元测试（识别 / 打分 / 路径解析 / 导入落地 / 八包部署计划）
+npm run smoke # 真机冒烟：引导空态 + 八卡片部署 + 内嵌开箱即用 + 深度验证全流程
 node tests/verify-fast-start.cjs # 冷启动 / 热启动耗时对比（校验缓存命中）
 ```
 
@@ -198,19 +257,21 @@ node tests/verify-fast-start.cjs # 冷启动 / 热启动耗时对比（校验缓
 dango-desk/
 ├─ electron/
 │  ├─ main.cjs          # 主进程：IPC 白名单、路径解析、导入落地、脚本调用
-│  ├─ core.cjs          # 核心：六包定义、识别打分、基线、四层验证
+│  ├─ core.cjs          # 核心：八包定义、识别打分、基线、四层验证
 │  └─ preload.cjs       # contextBridge 白名单
 ├─ src/
 │  ├─ App.tsx           # 主界面与状态
-│  ├─ components/       # 13 个组件（工具箱 / 详情 / 深度验证 / 导入 / 设置 …）
+│  ├─ components/       # 工具箱 / 词库 / 详情 / 深度验证 / 导入 / 设置
 │  └─ types.ts          # 渲染层与 IPC 的类型契约
+├─ docs/screenshots/    # GitHub 展示用界面截图
 ├─ tests/               # 单元 + 真机冒烟 + 打包产物验证
-├─ packed-packs/        # 六个工具包本体（不入库，构建时打入 resources/packs）
+├─ packed-packs/        # 八个工具包本体（不入库，构建时打入 resources/packs）
 ├─ scripts/
-│  └─ apply-portable-patch.cjs  # 把加速版 portable 模板注入 electron-builder
+│  ├─ pack-portable.cjs
+│  └─ capture-github-shots.cjs
 └─ build/
    ├─ icon.png
-   └─ portable-fast.nsi # 三级降级缓存启动器（替换原生模板）
+   └─ portable-fast.nsi # 三级降级缓存启动器
 ```
 
 ---
@@ -219,7 +280,7 @@ dango-desk/
 
 [MIT](./LICENSE) © Wanghan
 
-`packed-packs/` 内的六个工具包各自遵循其自身许可，不在本仓库分发范围内。
+`packed-packs/` 内的八个工具包各自遵循其自身许可，不在本仓库分发范围内。
 
 ---
 
