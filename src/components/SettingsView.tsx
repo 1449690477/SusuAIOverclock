@@ -25,8 +25,8 @@ export default function SettingsView({
       <div className="panel" style={{ marginBottom: 18 }}>
         <h2>根目录</h2>
         <p className="desc">
-          这些工具包各自一个子文件夹（codex / codex-panghu / cursor / dsh / opencode / workbuddy /
-          workbuddy-ai / anti-gravity）。便携版已内嵌全套；自选根目录时换台电脑重新选一次即可。
+          发布允许包为 cursor / dsh / opencode / workbuddy / workbuddy-ai。
+          Codex、胖虎、反重力旧载荷已隔离；更换根目录、导入目录或旧备份都不能解除隔离。
         </p>
 
         <div className="setting-row">
@@ -93,8 +93,8 @@ export default function SettingsView({
 
         <div className="note-box" style={{ marginTop: 16, marginBottom: 0 }}>
           <Info size={13} style={{ verticalAlign: -2, marginRight: 6 }} />
-          这个管理台是只读的：它不写入被管理的目录，也不执行里面的任何 .ps1 / .cmd / .bat / .py 脚本。
-          安装、卸载、验证效果这类操作，需要你在对应软件里按各自包的说明自行处理。
+          扫描与基线检查只读；安装/卸载会运行允许包的脚本，深度验证会启动客户端，备份/恢复与词库管理会写盘。
+          隔离策略在主进程强制执行，但不代表其他文件已通过恶意软件检测，也不代表用户目录已清理。
         </div>
       </div>
     </>

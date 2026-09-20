@@ -1,15 +1,105 @@
-# v1.5.4 — 新增 WorkBuddy AI 国际版破甲卡片
+# v1.5.5 / Electron 44.4.3 — 供应链污染处置与隔离重建
+
+## 关于上一个版本被杀毒软件告警
+
+**1.5.4 及更早版本发布后，多位用户反馈安装包被杀毒软件报毒、拦截。这不是我们有意为之。**
+
+经排查，污染来源是随包分发的旧 Codex（王炸破甲）载荷中夹带的投放器外壳，不是本软件自身代码的问题。
+
+已完成的处置：
+
+- 旧 Codex 载荷不再随包发布，已从依赖与打包链整体移除；
+- 与其同源的「胖虎」「反重力」两条独立分支一并停用（不是只把入口藏起来）；
+- 51 个确认受污染文件已隔离保留（含旧发布 EXE 与打包工具），原始证据完整留存；
+- 本版在全新虚拟磁盘内重新获取依赖、重新构建，升级到官方 Electron 44.4.3。
+
+**同时如实说明：本版不是「杀毒全绿」。** ClamAV 仍报告 29 个文件命中，已定位为安全案例文档、示例代码与整合词库的**内容签名**，不是此前的 `R.exe` / `N.exe` 投放器。我们不冒称杀毒通过。
+
+---
+
+**2026-09-20：实际 ClamAV 扫描仍报告 29 个 Infected files、54 条告警；本版不是 AV 放行或无病毒认证。Windows 宿主仍受感染，虚拟机构建不等于宿主清理或可信宿主证明。**
+
+只交付 ZIP，不把原生 EXE 解压到宿主或在宿主执行。本版已发布 GitHub Release `v1.5.5`。
+
+- [本地最终 ZIP](./release/SusuAIOverclock-1.5.5-portable-electron44.4.3-isolated.zip)
+- [交付完整性](./release/1.5.5-DELIVERY-INTEGRITY.json) · [最终构建 / AV 报告](./release/SusuAIOverclock-1.5.5-electron44.4.3-isolated-report.json)
+- [安全详报](./docs/SECURITY-1.5.5.md) · [可直接阅读的摘要](./release/1.5.5-SECURITY-REPORT.md)
+
+## 最终产物身份
+
+| 对象 | 字节数 | SHA-256 |
+| :-- | --: | :-- |
+| `SusuAIOverclock-1.5.5-portable-electron44.4.3-isolated.zip` | 115161469 | `81d0b280ffcc0765a139bab710f64cc794cdb5b6bb84ad4c1069cdf1bc01d883` |
+| ZIP 内 `SusuAIOverclock-1.5.5-portable.exe` | 114047016 | `089657d058dd647ae350be8936de3d536c127b66ac1ecd728067ff565887eb7b` |
+
+宿主以内置模块在内存核验：67 个条目 / 1 个 EXE，归档和 EXE 哈希均匹配客体，0 已知 IOC / 0 错误，没有解压或运行 EXE。归档交付降低再感染暴露，不保证免疫；完整性报告明确 `antivirusClearance=false`。
+
+## 隔离环境、运行时与源材料
+
+- 用户后续明确批准在本机隔离打包后，使用专用 VirtualBox、Ubuntu 24.04 官方 20260911 镜像和全新虚拟磁盘；NAT / 回环转发，无共享剪贴板或共享目录。受感染宿主 / 虚拟化层仍是剩余风险。
+- 固定官方 Electron **44.4.3**，移除 EOL 33 的最终运行时选择；旧 33 构建保留为已被替代的审计记录。完整官方运行时代码未改，打包 `.text` 与官方一致，仅正常品牌信息和 ASAR / 资源打包。
+- 移除旧 builder 缓存 / shim 变通；Node 22.23.2、npm 10.9.8、builder 25.1.8，全新 registry 依赖 514 条 SRI 记录、456 包安装。缓存标识为 `1.5.5-electron44.4.3`，不复用旧 33 缓存；这是正常安全更新，不是杀毒规避。
+- 真实 NSIS / 7z / ASAR 解包对比 3066 个文件，运行时与版本配置一致；实际资源包含 `cursor`、`dsh`、`opencode`、`workbuddy`、`workbuddy-ai` 五包，材料与 3134 条词库字节保持一致。
+- 8 张卡片保留；`codex`（冷咖啡石井）、`codex-panghu`（胖虎独立分支）、`anti-gravity` 三条路线有意停用。新增 Cursor / WorkBuddy AI 嵌套预期路径修复，5 项错误缺失提示消失，不承诺全部原功能保留。
+
+## 最终实测与未覆盖项
+
+| 范围 | 结果 |
+| :-- | :-- |
+| 测试套件 | **31 项，29 通过、0 失败、2 条件跳过**：已退役胖虎载荷相关项及 Linux 上不适用的 Windows junction 项 |
+| 编译检查 | 语法、TypeScript、Vite 通过 |
+| 有界已知 IOC 扫描 | 最终输入工具 124 个二进制、最终产物 14 个二进制，各 0 命中 / 0 错误 |
+| 后续 Linux ASAR GUI | **132 项通过、20 截图、0 渲染错误**；8 卡片、5 内嵌、3 阻断、9 次 IPC 执行前拒绝、5 项误提示修复、3134 词库搜索 / 纯文本详情及设置 |
+
+GUI 使用官方 Linux Electron 44.4.3 在客体无网络 namespace 加载**最终 Windows `app.asar` / resources 原字节**，没有重编译。默认启动遇到 SUID sandbox 配置错误，随后仅客体测试以 `--no-sandbox` 回退；真实值 `app.isPackaged=false` 未伪造。
+
+**未验证 Windows 原生 GUI、便携 EXE 自解压、Windows 平台探测和五包真实安装器；未执行安装 / 卸载、深度验证、用户 CLI、hooks、备份恢复或词库注入写入。** 旧 Electron 33 的两次 Wine 超时是历史失败，不是本版 Windows 验证。
+
+[后续 GUI 汇总](./release/gui-verification-1.5.5-electron44.4.3-ay5toza1/SUMMARY.json) · [20 张截图](./release/gui-verification-1.5.5-electron44.4.3-ay5toza1/gui-electron44.4.3-linux-no-sandbox-20260920T150459Z-coykj9fm/screenshots/)
+
+归档内及外置构建报告的 `pending-for-new-Electron44-build` 是打包时 GUI 尚未执行的时间点；后来的 GUI 汇总更新这项状态。归档生成时的完整构建 / 扫描报告保留，不修改最终 ZIP 或哈希；早期 ZIP 的只读词库深度分析仅在内容字节一致的范围内适用。
+
+## ClamAV 实际告警（未放行）
+
+ClamAV **1.5.3**、官方库 **28129 / 2026-09-20 06:26:26**，扫描 **26131 文件**（含源码、暂存、归档重复副本），报告 **29 个 Infected files、54 条告警行**：
+
+| 签名 | 告警行数 |
+| :-- | --: |
+| `Win.Exploit.CVE_2015_6096-1` | 18 |
+| `Img.Phishing.SvgJsPhishing-10044283-0` | 30 |
+| `Html.Downloader.Satan-6249582-1` | 6 |
+
+未预期签名 0、扫描限额警告 0，**并不表示扫描通过**。8 个 Markdown 源路径对应两种真实 XXE / SVG 示例；词库 1188 / 2427 / 2916 与 1389 / 1496 / 1603 两组保留同类内容。整库 JSON 的 Satan 签名来自跨记录 15 个关键词共现；3134 条逐记录完整引擎扫描没有单条 Satan 命中，整库告警仍保留。
+
+官方 44 参考 EXE 本次 AV 命中为 0；旧官方 33 的 Mikey 检测已复现，支持该项为运行时误报，但未经厂商确认。不能据此把交付包所有告警认定误报。当前内容告警不是旧 R/N 前置封装，但也不是无毒证明。
+
+React `<pre>` 详情只显示文本、不执行活动 HTML 或 OS 命令；词库注入则会写入下游 AI 规则，并非所有使用场景惰性无害。保留原文与功能，没有为隐藏报毒而拆分、编码、加白或移除内容。
+
+## 宿主证据与后续验证
+
+51 个确认命中的旧项目文件继续位于 `.security-quarantine-1.5.5/1789901641497-83836/*.quarantined`，移动前后哈希一致；`summary.json` / `manifest.jsonl` 保留映射。范围仅限 `node_modules`、`packed-packs`、`release`、`release-final`、`release-next`；原 1.5.4 EXE 路径不存在。隔离区被 Git 忽略且不作分发输入；这是改名 / 路径分离，不是沙箱或 NTFS 禁止执行，不要恢复样本。
+
+早期宿主报告仍记录 TEMP `R.exe` / `HD_X.dat` 命中；没有清理活动感染，也没有证明初始入口、家族、C2、数据窃取或写入者身份。`Get-MpComputerStatus` 未找到，不存在 Defender 放行结论；不得归因官方厂商恶意。用户原有 `_patch_installer_v15.py`、`parse-installer.ps1` 保留，未访问账号令牌。
+
+后续在独立可信 Windows 环境复核原生 GUI、自解压及允许包安装器，并独立复核 AV 内容告警。遇到 SmartScreen / 杀毒拦截应停止运行并核对报告，不绕过防护或添加排除项。不得沿用旧依赖、缓存、归档 / ASAR、旧输出或隔离样本来重建。
+
+---
+
+# 历史发布记录 — 非 1.5.5 验证，旧版安全保证失效
+
+**以下全部版本的截图、测试通过、沙盒「干净机」、性能与哈希记录仅为历史资料，不是本次可信宿主、产物安全或功能回归证明。旧文档中以未签名解释拦截、保证无问题或认定误报的安全结论已撤回；不要据历史记录运行旧产物或重跑会执行载荷的旧测试。**
+
+# v1.5.4 — 新增 WorkBuddy AI 国际版破甲卡片（历史，停止使用现有 EXE）
 
 Windows 便携桌面端。八张卡片一张冰蓝工作台：Codex 10.4 / 胖虎 / Cursor 1.2 / DSH 5.7.0 / OpenCode / WorkBuddy 4.4 / WorkBuddy AI 国际版 1.3 / 反重力 3.2。
 
-## 下载
+## 历史产物身份（不是下载或运行推荐）
 
-- [SusuAIOverclock-1.5.4-portable.exe](https://github.com/1449690477/SusuAIOverclock/releases/download/v1.5.4/SusuAIOverclock-1.5.4-portable.exe)（约 114 MB，免安装）
-- SHA-256：`EB77718675E041E0ECC958146AEC072A9B144EDE87B8EC0036BF7C4665580CCB`
+- 文件：`SusuAIOverclock-1.5.4-portable.exe`，119691442 字节；已移动隔离，原 `release/` 路径不存在。
+- SHA-256：`eb77718675e041e0ecc958146aec072a9b144ede87b8ec0036bf7c4665580ccb`，本次确认含共同封装的证据样本；哈希一致不等于安全。
+- 已移除下载链接和绕过拦截的指引。请停止运行并先阅读当前安全报告。
 
-首次运行若弹「已保护你的电脑」，点 **更多信息 → 仍要运行**。
-
-## 界面
+## 历史界面截图（不是 1.5.5 实机验证）
 
 ![工具箱](https://raw.githubusercontent.com/1449690477/SusuAIOverclock/main/docs/screenshots/toolbox.png)
 
@@ -34,7 +124,7 @@ Windows 便携桌面端。八张卡片一张冰蓝工作台：Codex 10.4 / 胖�
 
 完整记录见仓库 [`CHANGELOG.md`](https://github.com/1449690477/SusuAIOverclock/blob/main/CHANGELOG.md)。
 
-## 发布前校验
+## 历史发布前校验（非 1.5.5 验证）
 
 - 沙盒 A 干净机 / B 已有人设机安装+卸载，真机 `~/.workbuddy-ai` / `WorkBuddyAI` 哈希不变。
 - `npm test` 通过。
@@ -51,7 +141,7 @@ Windows 便携桌面端。八张卡片一张冰蓝工作台：Codex 10.4 / 胖�
 - 不打入旧 v3.6 的 `install_cursor.py` 与 `实测记录/`。
 - 应用版本升至 `1.5.3`。
 
-## 发布前校验
+## 历史发布前校验（非 1.5.5 验证）
 
 - `python setup.py --selftest` 通过。
 - 沙盒 A 干净机 / B 已有规则机安装+卸载，真机 `~/.cursor` 哈希不变。
@@ -69,7 +159,7 @@ Windows 便携桌面端。八张卡片一张冰蓝工作台：Codex 10.4 / 胖�
 - `DEPLOY_PLANS.anti-gravity` 仍直调 `Install-AntiGravity.ps1 -NoOpenLinks`。
 - 应用版本升至 `1.5.2`。
 
-## 发布前校验
+## 历史发布前校验（非 1.5.5 验证）
 
 - 源包 `selftest-upgrade.ps1` 隔离自检全绿。
 - 内嵌副本再跑同一套自检 + 干净/旧遮蔽/自定义规则三场景沙盒安装。
@@ -82,12 +172,12 @@ Windows 便携桌面端。八张卡片一张冰蓝工作台：Codex 10.4 / 胖�
 
 ## 同步内容
 
-- 用 `C:\Users\Administrator\Desktop\wb破4.4` 整包替换内嵌 WorkBuddy 包。
+- 用 `wb破4.4` 源包整包替换内嵌 WorkBuddy 包（历史记录）。
 - 不打入本机 `_quarantine` / `_*-state.json`。
 - `DEPLOY_PLANS.workbuddy` 安装/卸载均直调 `Install-WB-OneClick.ps1 -NoOpenLinks`。
 - 应用版本升至 `1.5.1`。
 
-## 发布前校验
+## 历史发布前校验（非 1.5.5 验证）
 
 - 源包 `selftest-upgrade.ps1`：83/83。
 - 内嵌副本再跑同一套自检 + 干净/已有/自定义三场景沙盒安装。
@@ -100,12 +190,12 @@ Windows 便携桌面端。八张卡片一张冰蓝工作台：Codex 10.4 / 胖�
 
 ## 同步内容
 
-- 用 `C:\Users\Administrator\Desktop\新版\codex-break-kit-v10` 整包替换内嵌 Codex「冷咖啡石井」。
+- 用 `codex-break-kit-v10` 源包整包替换内嵌 Codex「冷咖啡石井」（历史记录）。
 - 桌面端加固保留：vision-exp 串行工具、反夹层硬自检、`DEPLOY_PLANS.codex` 直调 `install-replica.ps1 -NoOpenLinks -SkipAstra6`。
 - 升级识别补上 1.4 内嵌 hook 哈希 `C18FE139…` 与独立 v10.4 原版 `B301B25F…`。
 - 应用版本升至 `1.5.0`。
 
-## 发布前校验
+## 历史发布前校验（非 1.5.5 验证）
 
 - `npm test` 通过。
 - 沙盒安装：干净 home / 已有 hooks.json / 非作者路径，均能完整跑完 `install-replica.ps1`。
@@ -137,7 +227,7 @@ Windows 便携桌面端。八张卡片一张冰蓝工作台：Codex 10.4 / 胖�
 - Omen 启动入口改为相对包目录定位，不再依赖开发机绝对路径；BAT 返回真实退出码。
 - 应用版本为 `1.3.8`。
 
-## 发布前校验
+## 历史发布前校验（非 1.5.5 验证）
 
 - 不将源包 `backups/` 目录、`__pycache__` 或 `.pyc` 文件带入内嵌资源。
 - `packed-packs/workbuddy` 与 `release/win-unpacked/resources/packs/workbuddy` 关键文件哈希一致。
@@ -353,6 +443,8 @@ models.json       与上一版逐文件一致       ✓
 
 ## 安全检查
 
+> 以下仅为 v1.3.5 的历史代码 / 完整性检查记录，不能证明当时或当前二进制无恶意代码；相关安全保证失效，不是 1.5.5 的新增验证。
+
 - `install-replica.ps1` / `check_codex.ps1` / `Uninstall.ps1` 三份 PS 脚本 **语法解析全 OK**
 - 注入后行尾仍是**全 CRLF**（CR=LF=950）、**BOM 保留**（`efbbbf`）
 - 补丁脚本**纯标准库**（`argparse/glob/hashlib/json/os/shutil/struct/subprocess/sys/tempfile/time`），不引入依赖
@@ -417,7 +509,7 @@ models.json       与上一版逐文件一致       ✓
 
 本版专修一个启动错误：双击 exe 弹「由于找不到 ffmpeg.dll，无法继续执行代码」。根因是加速版启动器的缓存解压存在并发竞态——首次启动解压需数秒，期间再次双击会互踩解压目录，且解压插件吞写入错误，半截缓存被标记为完整后每次启动都命中它。现已重写为「唯一暂存目录解压 → 四关键文件校验 → 原子改名晋升 → 晋升成功才写标记」，并发实例自动互相等待复用，半截缓存会被 L1 抽验识破并自动重建。启动性能不变（冷启动约 6s / 热启动约 0.8s）。
 
-**已中招的用户**：换用本版 exe 即自动自愈（无需手动清缓存）；也可手动删除 `%LOCALAPPDATA%\SusuAIOverclock-cache\` 立即重建。
+**历史缓存故障说明**：当时的「自愈」仅指半截解压缓存重建，不是感染清除。旧版更换 EXE / 删除缓存的说明不作为当前处置指引；本次没有运行旧产物或清理系统。
 
 功能内容与 v1.3.0 完全一致：Codex 双破甲分支（冷咖啡石井 + 胖虎）、七包工作台、v1.2.2 全部修复。
 
@@ -438,27 +530,21 @@ models.json       与上一版逐文件一致       ✓
 
 ---
 
-## 下载
+## 历史产物记录（不推荐下载或执行）
 
 | 文件 | 大小 | 说明 |
 | :-- | :-- | :-- |
-| `SusuAIOverclock-1.3.6-portable.exe` | ~140 MB | 免安装便携版，双击即用，**已内嵌七个工具包（Codex V9 Astra6 + 命名空间修复 + 反夹层安装侧防线 + Cursor v3.6 Grok 4.6 定向层 + 胖虎）+ L3 进程层多源探测修复** |
+| `SusuAIOverclock-1.3.6-portable.exe` | ~140 MB | 历史七包便携产物记录，未在本次重新验证，不作为运行推荐 |
 
-> 首次运行 Windows 提示「已保护你的电脑」→ 点 **更多信息 → 仍要运行**。无代码签名证书所致，非软件问题。
-> 若杀软拦截，请将 exe 与包目录加入白名单。
-> **装 codex 包前请先完全退出 Codex（含托盘图标）**：安装脚本会在装包前对 Codex 的 `app.asar` 打 1 字节命名空间修复，Codex 在跑会锁文件。装包日志里能看到 `[1.5/9] codex_app namespace fix` 一行。
+> 旧安全保证已撤回，绕过 SmartScreen / 杀毒拦截的指引已删除。遇到拦截应停止运行并核对当前安全报告；不要用旧包恢复隔离功能。
 
-**SHA-256 校验**（可选，验证下载完整）：
+**历史 SHA-256 记录**（只作身份记录，不是无病毒证明，也不是 1.5.5 校验和）：
 
 ```
 534E1495CED90020461F9AAE6130B55B07ADC4DD5C384252E78109BD42764B96
 ```
 
-```powershell
-Get-FileHash .\SusuAIOverclock-1.3.6-portable.exe -Algorithm SHA256
-```
-
-> **从旧版升级**：直接换用新 exe 即可。若曾遇到「找不到 ffmpeg.dll」，v1.3.1 起会自动识破并重建半截缓存。Codex 包 v8 重装前会备份旧配置（`backups/eni-solo-*`），且**工具事件纯放行（DeepSeek 400 修复）已包含在包内**；Cursor 包 v3.6 重装会先备份旧规则文件再覆盖（.bak.<时间戳>），卸载可还原。Codex 两个分支互不干扰历史配置——石井分支重装仍走 `install-replica.ps1` 自愈（清 PreToolUse 遗留注册）；胖虎分支首次装会隔离当前 hooks.json（含时间戳备份），卸载即还原。原有 `config.toml` 账号配置一律保留。
+> 历史升级、缓存自愈与配置保留说明不再作为当前升级操作指南；本次未运行旧 EXE 或安装器，未验证这些历史保证。当前以 1.5.5 隔离和可信重建要求为准。
 
 ---
 
@@ -494,6 +580,8 @@ Get-FileHash .\SusuAIOverclock-1.3.6-portable.exe -Algorithm SHA256
 **关于硬件加速**：默认保留 Chromium 硬件加速。这是为了避免原先「禁 GPU + 禁软件渲染」导致 Electron 子进程异常退出。普通 Windows 桌面正常使用；极少数远程桌面或老旧显卡环境若出现黑屏，再单独用软件渲染模式排查。
 
 ### portable 特性
+
+> 以下是 v1.2.0 原设计描述，不是受污染二进制实际行为的保证；关于不创建启动项 / 服务等安全保证不再有效，本次未据此宣告系统干净。
 
 - 不需要安装器
 - 不写注册表安装项
@@ -547,7 +635,7 @@ Get-FileHash .\SusuAIOverclock-1.3.6-portable.exe -Algorithm SHA256
 
 ---
 
-## 验证记录
+## 历史验证记录（非 1.5.5 验证）
 
 | 项目 | 结果 |
 | :-- | :-- |
@@ -575,7 +663,7 @@ Get-FileHash .\SusuAIOverclock-1.3.6-portable.exe -Algorithm SHA256
 ## 已知限制
 
 - 仅 Windows x64；无 macOS / Linux 构建
-- 无代码签名，SmartScreen 会提示未知发布者
+- 历史版本未签名；这不能解释本次所有拦截或证明文件无害，当前应停止运行并核对安全报告
 - 仓库不含 `packed-packs/`（377 MB），从源码构建需自行放置工具包
 - GUI 通道深度验证会把客户端短暂顶到前台几秒
 

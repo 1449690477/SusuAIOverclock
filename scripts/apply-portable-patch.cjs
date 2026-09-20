@@ -11,6 +11,7 @@
 
 'use strict';
 
+const { assertBuildInputsSafe } = require('./preflight-security.cjs');
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -21,40 +22,46 @@ const TARGET = path.join(TARGET_DIR, 'portable.nsi');
 const BACKUP = path.join(TARGET_DIR, 'portable.nsi.orig');
 const MARKER = '苏苏 AI超频 · 加速版 portable 启动器';
 
-function restore7za() {
-  const destDir = path.join(ROOT, 'node_modules', '7zip-bin', 'win', 'x64');
-  const dest = path.join(destDir, '7za.exe');
-  const cache7za = path.join(
-    process.env.LOCALAPPDATA || '',
-    'electron-builder', 'Cache', '7zip@1.0.0', '7zip-win-x64-a34pt', 'bin', '7za.exe'
-  );
-  if (!fs.existsSync(cache7za)) {
-    console.error('[patch] 找不到 7za.exe 缓存: ' + cache7za);
-    process.exit(1);
+function disablePortableElevateHelper() {
+  // electron-builder 25.x ignores config.nsis for portable; its schema also
+  // rejects portable.packElevateHelper. Patch only the known constructor arm.
+  // The portable launcher runs as the user and has no elevated updater.
+  const target = path.join(ROOT, 'node_modules', 'app-builder-lib', 'out', 'targets', 'nsis', 'NsisTarget.js');
+  const current = fs.readFileSync(target, 'utf8');
+  const original = /(targetName === "portable"\r?\n\s*)\? Object\.create\(null\)/g;
+  const replacement = '$1? { packElevateHelper: false } /* dango: portable needs no elevate helper */';
+  const patchedArm = /targetName === "portable"\r?\n\s*\? \{ packElevateHelper: false \} \/\* dango: portable needs no elevate helper \*\//;
+  if (patchedArm.test(current)) return;
+  if ((current.match(original) || []).length !== 1) {
+    throw new Error('[patch] Unrecognized NsisTarget.js; review freshly installed electron-builder on a clean host. Do not restore cached binaries.');
   }
-  fs.mkdirSync(destDir, { recursive: true });
-  const cacheSize = fs.statSync(cache7za).size;
-  const destOk = fs.existsSync(dest) && fs.statSync(dest).size === cacheSize;
-  if (destOk) {
-    console.log('[patch] 7za.exe 已就绪 (' + cacheSize + ' bytes)');
-    return;
-  }
-  fs.copyFileSync(cache7za, dest);
-  console.log('[patch] 已从 electron-builder 缓存恢复 7za.exe (' + cacheSize + ' bytes)');
+  fs.writeFileSync(target, current.replace(original, replacement), 'utf8');
+  console.log('[patch] portable elevate helper disabled (guarded builder compatibility patch)');
 }
 
 function main() {
-  restore7za();
+  // FIRST: no template/dependency writes until the complete preflight succeeds.
+  assertBuildInputsSafe({ root: ROOT });
+  // 7za must come from freshly installed, independently verified dependencies
+  // on the clean build host. Never copy an executable from this host's cache.
+  disablePortableElevateHelper();
   if (!fs.existsSync(SRC)) {
     console.error('[patch] 源模板不存在: ' + SRC);
     process.exit(1);
   }
   if (!fs.existsSync(TARGET_DIR)) {
-    console.error('[patch] electron-builder 模板目录不存在，请先 npm install');
+    console.error('[patch] electron-builder 模板目录不存在；请在全新可信构建机按锁文件重新安装并核验依赖，不要在已感染主机安装或构建');
     process.exit(1);
   }
 
-  const src = fs.readFileSync(SRC, 'utf8');
+  const template = fs.readFileSync(SRC, 'utf8');
+  // Application version intentionally remains 1.5.5. A runtime-specific key
+  // prevents a prior Electron33 cache from silently defeating this EOL update.
+  // Change launcher cache identity, not official Electron bytes or any content.
+  const oldCacheKey = 'StrCpy $cacheDir "$cacheParent\\${VERSION}"';
+  const newCacheKey = 'StrCpy $cacheDir "$cacheParent\\${VERSION}-electron44.4.3"';
+  if (template.split(oldCacheKey).length !== 2) throw new Error('[patch] Unrecognized portable cache arm; review template before packaging');
+  const src = template.replace(oldCacheKey, newCacheKey);
 
   // 首次执行：备份原始模板
   if (!fs.existsSync(BACKUP)) {

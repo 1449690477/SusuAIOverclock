@@ -26,8 +26,9 @@ export interface Pack {
   accent: Accent;
   note: string;
   path: string | null;
-  /** 包目录来源：imported=导入覆盖 / external=外部根目录 / embedded=内嵌包 / none=未找到 */
-  source?: 'imported' | 'external' | 'embedded' | 'none';
+  /** quarantined=策略隔离，不解析旧载荷目录 */
+  source?: 'imported' | 'external' | 'embedded' | 'none' | 'quarantined';
+  blockedReason: string | null;
   found: boolean;
   version: string | null;
   versionSource: string | null;
@@ -95,6 +96,7 @@ export interface EvidenceItem {
 
 export interface BreakStatus {
   id: string;
+  blockedReason?: string | null;
   hasCheck: boolean;
   /** true=已生效 / false=未生效 / null=无判定依据 */
   active: boolean | null;
@@ -102,6 +104,7 @@ export interface BreakStatus {
 }
 
 export interface PlanInfo {
+  blockedReason: string | null;
   hasInstall: boolean;
   hasUninstall: boolean;
   installFile: string | null;
@@ -135,6 +138,7 @@ export interface ImportCandidate {
 }
 
 export interface ImportedDirAnalysis {
+  blockedReason?: string | null;
   platform: string;
   dir: string;
   readable: boolean;
@@ -148,13 +152,14 @@ export interface ImportedDirAnalysis {
 }
 
 export interface ImportDetection {
+  blockedReason?: string | null;
   kind: 'single' | 'multi-root' | 'unknown';
   inputKind?: 'file' | 'dir';
   platform?: string;
   confidence?: number;
   path: string;
   candidates?: ImportCandidate[];
-  platforms?: { platform: string; folder: string; path: string; analysis?: ImportedDirAnalysis }[];
+  platforms?: { platform: string; folder: string; path: string; blockedReason?: string | null; analysis?: ImportedDirAnalysis }[];
   scores?: Record<string, number>;
   error?: string;
   analysis?: ImportedDirAnalysis;
@@ -356,7 +361,7 @@ export interface DangoApi {
   importPackDir: (p: string, platformId: string) => Promise<Hub>;
   importSingleFile: (p: string, platformId: string) => Promise<ImportFileResult>;
   clearImport: (platformId: string) => Promise<Hub>;
-  listImports: () => Promise<Record<string, { kind: string; path: string; importedAt: string }>>;
+  listImports: () => Promise<Record<string, { kind: string; path: string; importedAt: string; blockedReason?: string | null }>>;
 
   /* ---------------- 内嵌词库 v2 ---------------- */
   libraryList: () => Promise<LibraryListResult>;

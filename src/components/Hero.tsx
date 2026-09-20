@@ -25,7 +25,7 @@ export default function Hero({ packs, lastScanAt, root }: { packs: Pack[]; lastS
       <div className="hero-text">
         <h1>苏苏 AI超频 · Susu AI Overclock</h1>
         <p>
-          八大 AI 工具包的一键部署、基线对比与大模型会话超频监控台。支持真实图标提取、一键调用包内脚本、四层穿透透视（文件/配置/进程/模型会话问答放行与拒绝分析）。
+          五个发布包保留部署与管理；Codex、胖虎、反重力旧载荷已隔离。平台检测与普通文本词库独立保留，批量部署自动排除隔离项。
         </p>
         <p style={{ marginTop: 8, fontSize: 12, color: 'var(--ink-faint)' }}>
           当前根目录：{root || '（尚未选择）'} · 最近扫描：{formatTime(lastScanAt)}

@@ -1,8 +1,8 @@
 {
   "name": "dango-desk",
-  "version": "1.5.4",
+  "version": "1.5.5",
   "private": true,
-  "description": "苏苏 AI超频 - 八大工具包统一管理与模型会话监控",
+  "description": "苏苏 AI超频 - 五个发布工具包与平台管理；Codex 冷咖啡石井、Codex 胖虎、反重力旧载荷已隔离，不随包发布",
   "main": "electron/main.cjs",
   "author": "Wanghan",
   "license": "MIT",
@@ -19,8 +19,10 @@
     "dev:electron": "npm run build && electron .",
     "smoke": "node tests/desktop-smoke.mjs",
     "test": "node --test tests/core.test.cjs",
+    "test:security": "node --test tests/security-quarantine.test.cjs tests/security-preflight.test.cjs",
+    "audit:security": "node scripts/collect-security-evidence.cjs",
     "patch:portable": "node scripts/apply-portable-patch.cjs",
-    "pack:portable": "npm run patch:portable && vite build && node scripts/pack-portable.cjs",
+    "pack:portable": "node scripts/preflight-security.cjs && npm run patch:portable && vite build && node scripts/pack-portable.cjs",
     "scrape:library": "node scripts/scrape-details.cjs",
     "snapshot:library": "node scripts/build-library-snapshot.cjs",
     "refresh:library": "npm run scrape:library && npm run snapshot:library"
@@ -35,7 +37,7 @@
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.3",
-    "electron": "^33.0.2",
+    "electron": "44.4.3",
     "electron-builder": "^25.1.8",
     "esbuild": "^0.21.5",
     "playwright": "^1.48.2",
@@ -51,7 +53,8 @@
       "buildResources": "build",
       "output": "release"
     },
-    "beforeBuild": "./scripts/before-build.cjs",
+    "beforePack": "./scripts/before-build.cjs",
+    "npmRebuild": false,
     "electronDist": "node_modules/electron/dist",
     "files": [
       "electron/**/*",
@@ -72,7 +75,13 @@
         "from": "packed-packs",
         "to": "packs",
         "filter": [
-          "**/*",
+          "cursor/**",
+          "dsh/**",
+          "opencode/**",
+          "workbuddy/**",
+          "workbuddy-ai/**",
+          "NOTICE.txt",
+          "!**/_deprecated-omen-bridge/**",
           "!**/backups/**",
           "!**/evidence/**",
           "!**/__pycache__/**",
@@ -102,7 +111,7 @@
       ]
     },
     "nsis": {
-      "packElevateHelper": true
+      "packElevateHelper": false
     },
     "portable": {
       "artifactName": "SusuAIOverclock-${version}-portable.exe",

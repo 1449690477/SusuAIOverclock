@@ -25,6 +25,7 @@ export default function PackCard({
   onDeepVerify?: (id: string) => void;
 }) {
   const active = breakStatus?.active;
+  const blockedReason = pack.blockedReason || plan?.blockedReason;
 
   return (
     <div
@@ -51,13 +52,14 @@ export default function PackCard({
             {platform?.installed ? ' · 已安装' : ' · 未检测到'}
           </div>
         </div>
-        <span className={`badge ${active === true ? 'badge-ok' : active === false ? 'badge-warn' : 'badge-muted'}`}>
-          {active === true ? <ShieldCheck size={11} /> : <CircleSlash size={11} />}
-          {active === true ? '已生效' : active === false ? '未生效' : '无判定'}
+        <span className={`badge ${blockedReason ? 'badge-warn' : active === true ? 'badge-ok' : active === false ? 'badge-warn' : 'badge-muted'}`}>
+          {!blockedReason && active === true ? <ShieldCheck size={11} /> : <CircleSlash size={11} />}
+          {blockedReason ? '已隔离 · 只读' : active === true ? '已生效' : active === false ? '未生效' : '无判定'}
         </span>
       </div>
 
       <p className="pack-sub">{pack.subtitle}</p>
+      {blockedReason ? <div className="warn-box" data-testid={`quarantine-${pack.id}`}>{blockedReason}</div> : null}
 
       <div className="pack-meta">
         <span>
@@ -72,8 +74,8 @@ export default function PackCard({
       </div>
 
       <div className="pack-foot" style={{ flexWrap: 'wrap', gap: 6 }}>
-        <span className={`badge ${pack.found ? 'badge-ok' : 'badge-muted'}`}>{pack.found ? '目录已找到' : '目录未找到'}</span>
-        {pack.source && pack.source !== 'none' ? (
+        <span className={`badge ${pack.found ? 'badge-ok' : 'badge-muted'}`}>{blockedReason ? '载荷已停用' : pack.found ? '目录已找到' : '目录未找到'}</span>
+        {pack.source && pack.source !== 'none' && pack.source !== 'quarantined' ? (
           <span
             className={`badge ${
               pack.source === 'imported' ? 'badge-warn' : pack.source === 'embedded' ? 'badge-accent' : 'badge-muted'
@@ -91,29 +93,29 @@ export default function PackCard({
         {onDeepVerify && (
           <button
             className="btn btn-ghost btn-sm"
-            disabled={busy || !pack.found}
+            disabled={busy || Boolean(blockedReason) || !pack.found}
             onClick={() => onDeepVerify(pack.id)}
             data-testid={`deep-verify-btn-${pack.id}`}
-            title="L1-L4 四层穿透与模型问答监控"
+            title={blockedReason || 'L1-L4 四层穿透与模型问答监控'}
           >
             <Radar size={13} /> 监控
           </button>
         )}
         <button
           className="btn btn-mint btn-sm"
-          disabled={busy || !pack.found || !plan?.hasInstall}
+          disabled={busy || Boolean(blockedReason) || !pack.found || !plan?.hasInstall}
           onClick={() => onDeploy(pack.id, 'install')}
           data-testid={`install-${pack.id}`}
-          title={plan?.installFile ? `执行 ${plan.installFile}` : '无安装脚本'}
+          title={blockedReason || (plan?.installFile ? `执行 ${plan.installFile}` : '无安装脚本')}
         >
           <Download size={13} /> 安装
         </button>
         <button
           className="btn btn-ghost btn-sm"
-          disabled={busy || !pack.found || !plan?.hasUninstall}
+          disabled={busy || Boolean(blockedReason) || !pack.found || !plan?.hasUninstall}
           onClick={() => onDeploy(pack.id, 'uninstall')}
           data-testid={`uninstall-${pack.id}`}
-          title={plan?.uninstallFile ? `执行 ${plan.uninstallFile}` : '该包未提供卸载脚本'}
+          title={blockedReason || (plan?.uninstallFile ? `执行 ${plan.uninstallFile}` : '该包未提供卸载脚本')}
         >
           <Trash2 size={13} /> 卸载
         </button>

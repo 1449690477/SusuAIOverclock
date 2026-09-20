@@ -99,7 +99,7 @@ export default function App() {
     [api, selected, toast]
   );
 
-  /** 重新探测六个平台 + 破甲生效状态 */
+  /** 平台检测保留；隔离包的部署计划由主进程禁用 */
   const refreshDetect = useCallback(async () => {
     if (!api) return;
     try {
@@ -166,6 +166,8 @@ export default function App() {
     async (id: string, action: 'install' | 'uninstall') => {
       if (!api) return;
       const pack = packs.find((p) => p.id === id);
+      const blockedReason = pack?.blockedReason || plans[id]?.blockedReason;
+      if (blockedReason) { toast('err', blockedReason); return; }
       const label = action === 'install' ? '安装' : '卸载';
       setConsoleOpen(true);
       setDeploying(true);
@@ -181,7 +183,7 @@ export default function App() {
         await refreshDetect();
       }
     },
-    [api, packs, refreshDetect, toast]
+    [api, packs, plans, refreshDetect, toast]
   );
 
   /** 深度分层验证：拉起客户端发口令抓回复，定位失败层 */
@@ -189,6 +191,8 @@ export default function App() {
     async (id: string) => {
       if (!api) return;
       const pack = packs.find((p) => p.id === id) || null;
+      const blockedReason = pack?.blockedReason || plans[id]?.blockedReason;
+      if (blockedReason) { toast('err', blockedReason); return; }
       setDeepFor(pack);
       setDeepResult(null);
       setDeepLoading(true);
@@ -207,7 +211,7 @@ export default function App() {
         await refreshDetect();
       }
     },
-    [api, packs, refreshDetect, toast]
+    [api, packs, plans, refreshDetect, toast]
   );
 
   /** 一键全部安装 / 卸载：串行执行，避免几个脚本同时改同一批文件 */
@@ -215,7 +219,7 @@ export default function App() {
     async (action: 'install' | 'uninstall') => {
       if (!api) return;
       const label = action === 'install' ? '安装' : '卸载';
-      const targets = packs.filter((p) => p.found && (action === 'install' ? plans[p.id]?.hasInstall : plans[p.id]?.hasUninstall));
+      const targets = packs.filter((p) => !p.blockedReason && !plans[p.id]?.blockedReason && p.found && (action === 'install' ? plans[p.id]?.hasInstall : plans[p.id]?.hasUninstall));
       if (!targets.length) {
         toast('info', `没有可${label}的包`);
         return;
@@ -276,7 +280,7 @@ export default function App() {
           <MascotCat size={38} />
           <div>
             <div className="titlebar-title">苏苏 AI超频 · Susu AI Overclock</div>
-            <div className="titlebar-sub">八大模型工作台 · 深度状态与会话监控</div>
+            <div className="titlebar-sub">五个发布包 · 三个旧载荷已隔离 · 平台管理保留</div>
           </div>
         </div>
         <div className="titlebar-spacer" />
@@ -341,13 +345,13 @@ export default function App() {
                 <MascotCat size={110} />
                 <h3>正在读取包状态…</h3>
               </div>
-            ) : !hub.root && !hub.hasEmbedded ? (
+            ) : !hub.root && !hub.hasEmbedded && !packs.length ? (
               <div className="empty" data-testid="empty-guide">
                 <MascotCat size={110} />
                 <h3>先选一个根目录</h3>
                 <p>
-                  选择包含工具包文件夹的父目录（codex / codex-panghu / cursor / dsh / opencode / workbuddy /
-                  workbuddy-ai / anti-gravity）。选好后可以一键安装、卸载、备份，并验证破甲是否生效。
+                  选择包含发布包的父目录（cursor / dsh / opencode / workbuddy / workbuddy-ai）。
+                  Codex、胖虎、反重力旧载荷已隔离，外部目录和历史导入不能重新启用它们。
                 </p>
                 <button className="btn btn-primary" onClick={() => run(() => api.chooseRoot())} disabled={busy}>
                   <FolderSearch size={14} /> 选择根目录
@@ -378,7 +382,7 @@ export default function App() {
                     <Trash2 size={13} /> 一键全部卸载
                   </button>
                   <span className="deploy-hint">
-                    安装 = 执行包内自带的安装脚本；卸载 = 执行包内自带的卸载脚本。日志实时可见。
+                    安装/卸载会执行允许包的脚本；隔离载荷不参与批量操作，旧备份与导入来源不受信任。
                   </span>
                 </div>
 
@@ -511,7 +515,7 @@ export default function App() {
           onVerifyBreak={async (id) => {
             const r = await api.verifyBreak(id);
             setBreaks((prev) => ({ ...prev, [id]: r }));
-            toast(r.active ? 'ok' : 'info', r.active ? '破甲已生效' : '未检测到生效标记');
+            toast(r.active ? 'ok' : 'info', r.blockedReason || (r.active ? '破甲已生效' : '未检测到生效标记'));
           }}
           onDeepVerify={verifyDeep}
         />

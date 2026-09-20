@@ -55,6 +55,7 @@ export default function PackDetailModal({
 }) {
   const d = pack.lastChanges;
   const active = breakStatus?.active;
+  const blockedReason = pack.blockedReason || plan?.blockedReason;
 
   return (
     <div className="overlay" onClick={onClose} data-testid="pack-detail-modal">
@@ -71,7 +72,7 @@ export default function PackDetailModal({
           </button>
         </div>
 
-        {pack.note ? <div className="note-box">{pack.note}</div> : null}
+        {blockedReason ? <div className="warn-box" role="status">已隔离 · 载荷操作禁用。{blockedReason}</div> : pack.note ? <div className="note-box">{pack.note}</div> : null}
 
         <div className="block">
           <h4>目标平台</h4>
@@ -89,7 +90,7 @@ export default function PackDetailModal({
             <div className="kv-item">
               <div className="kv-k">破甲是否生效</div>
               <div className="kv-v">
-                {active === true ? '已生效' : active === false ? '未生效' : '无判定依据'}
+                {blockedReason ? '已隔离（不是安全认证）' : active === true ? '已生效' : active === false ? '未生效' : '无判定依据'}
               </div>
             </div>
             <div className="kv-item">
@@ -116,14 +117,14 @@ export default function PackDetailModal({
         ) : null}
 
         <div className="note-box">
-          安装与卸载调用的是这个包目录里<strong>自带的脚本</strong>（{plan?.installFile || '无'} / {plan?.uninstallFile || '无'}），
-          本软件不生成、不改写任何注入内容。执行过程与退出码在下方日志里完整可见。
+          {blockedReason ? '仅保留平台检测、状态查看与独立的普通文本词库管理；不运行旧卸载程序，不恢复旧备份，也不删除用户目录或原始证据。' :
+            <>安装与卸载会执行允许包的<strong>自带脚本</strong>（{plan?.installFile || '无'} / {plan?.uninstallFile || '无'}）。备份、恢复及词库管理会写盘，执行日志与退出码可查看。</>}
         </div>
 
         <div className="kv">
           <div className="kv-item">
             <div className="kv-k">目录</div>
-            <div className="kv-v">{pack.found ? '已找到' : '未找到'}</div>
+            <div className="kv-v">{blockedReason ? '已隔离，不解析载荷' : pack.found ? '已找到' : '未找到'}</div>
           </div>
           <div className="kv-item">
             <div className="kv-k">版本</div>
@@ -159,11 +160,11 @@ export default function PackDetailModal({
           <h4>两个独立状态（不合并）</h4>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <span className={`badge ${pack.found ? 'badge-ok' : 'badge-muted'}`}>
-              目录：{pack.found ? '已找到' : '未找到'}
+              目录：{blockedReason ? '已隔离' : pack.found ? '已找到' : '未找到'}
             </span>
             <span className={baselineClass(pack.lastResult)}>校验：{BASELINE_LABEL[pack.lastResult]}</span>
             <span className={`badge ${active === true ? 'badge-ok' : active === false ? 'badge-warn' : 'badge-muted'}`}>
-              破甲：{active === true ? '已生效' : active === false ? '未生效' : '无判定'}
+              载荷：{blockedReason ? '已停用' : active === true ? '已生效' : active === false ? '未生效' : '无判定'}
             </span>
           </div>
         </div>
@@ -226,7 +227,7 @@ export default function PackDetailModal({
         <div className="modal-foot">
           <button
             className="btn btn-mint"
-            disabled={busy || !pack.found || !plan?.hasInstall}
+            disabled={busy || Boolean(blockedReason) || !pack.found || !plan?.hasInstall}
             onClick={() => onDeploy(pack.id, 'install')}
             data-testid="detail-install"
           >
@@ -234,16 +235,16 @@ export default function PackDetailModal({
           </button>
           <button
             className="btn btn-ghost"
-            disabled={busy || !pack.found || !plan?.hasUninstall}
+            disabled={busy || Boolean(blockedReason) || !pack.found || !plan?.hasUninstall}
             onClick={() => onDeploy(pack.id, 'uninstall')}
             data-testid="detail-uninstall"
           >
             <Trash2 size={14} /> 卸载
           </button>
-          <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => onBackup(pack.id)}>
+          <button className="btn btn-ghost btn-sm" disabled={busy || Boolean(blockedReason)} onClick={() => onBackup(pack.id)}>
             <Save size={13} /> 备份配置
           </button>
-          <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => onDeepVerify(pack.id)} data-testid="detail-deep-verify">
+          <button className="btn btn-primary btn-sm" disabled={busy || Boolean(blockedReason)} onClick={() => onDeepVerify(pack.id)} data-testid="detail-deep-verify">
             <Radar size={13} /> 深度验证
           </button>
           <div style={{ flex: 1 }} />

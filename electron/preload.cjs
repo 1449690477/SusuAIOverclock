@@ -4,7 +4,8 @@
  * preload.cjs — 受控桥接层
  *
  * 只暴露一组白名单方法。渲染层拿不到 fs / path / child_process，
- * 也没办法传任意路径进来执行 —— 所有路径只能由主进程从 state 或对话框取。
+ * 导入路径与历史 state 都是不可信输入；主进程在载荷操作前检查
+ * 发布隔离策略和实际来源，不依赖 UI 禁用状态作为安全边界。
  */
 
 const { contextBridge, ipcRenderer } = require('electron');

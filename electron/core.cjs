@@ -1,12 +1,12 @@
 'use strict';
 
 /**
- * core.cjs — Dango Desk 的纯逻辑层（无 Electron 依赖，可被 node --test 直接测）
+ * core.cjs — Dango Desk 的共享业务层（无 Electron 依赖，并非纯函数模块）
  *
  * 边界说明（重要）：
- *   本模块只做「读」。列目录、读文本、算 sha256、比对差异。
- *   它从不 spawn 进程、从不执行 .ps1/.cmd/.bat/.py/.vbs、从不写入被管理的目录。
- *   所有写操作只落在 Electron 的 userData（设置、基线快照、报告导出）。
+ *   扫描/哈希只读；平台检测可查询系统注册表和进程列表，不启动目标客户端。
+ *   词库管理会写入用户规则文件。部署参数受发布隔离策略与来源检查约束，
+ *   实际安装/卸载与深度会话由主进程执行；不可把本模块当纯策略测试加载。
  */
 
 const fs = require('node:fs');
@@ -15,24 +15,26 @@ const path = require('node:path');
 const os = require('node:os');
 const crypto = require('node:crypto');
 const { execFileSync } = require('node:child_process');
+const { RELEASE_PACK_IDS, QUARANTINED_PACKS, getPackBlockReason, assertPackAllowed } = require('./security-policy.cjs');
+const { assertPackSourceAllowed, missingExpectedEntries } = require('./pack-source-policy.cjs');
 
 const SKIP_DIRS = new Set(['node_modules', '.git', '.cache', '__pycache__', '.venv', 'venv']);
 const MAX_CHANGE_ITEMS = 200;
 
 /**
- * 八个受管工具包的定义（codex 有两个可选破甲分支：冷咖啡石井 / 胖虎；WorkBuddy 分国内版 / 国际版）。
+ * 平台展示定义：五个发布包，三个已隔离的旧载荷仅保留说明与平台检测。
  * expected 支持 * 通配（前缀匹配），用于 install-manifest-*.json 这类带时间戳的文件。
  * version 来源按顺序尝试，第一个命中的生效，并把来源一并回报给 UI（不猜、不编造）。
  */
 const PACKS = [
   {
     id: 'codex',
-    name: 'Codex 破甲包 · 冷咖啡石井',
-    subtitle: 'eni-solo 复刻 · 多事件钩子 · Astra6',
+    name: 'Codex 冷咖啡石井 · 旧载荷已隔离',
+    subtitle: '安全隔离 · 仅平台查看与普通文本词库管理',
     folder: 'codex',
     target: 'Codex CLI / 桌面端',
     accent: 'sakura',
-    note: 'v10.4：AGENTS.md 并入 L1 契约、整句暗号握手、ConvertTo-DeepDict 换机安装、SkipAstra6 软件路径；保留串行工具调用和反夹层硬自检。与胖虎互斥（胖虎会隔离 hooks.json）。',
+    note: QUARANTINED_PACKS.codex,
     expected: ['Install-OneClick.cmd', 'install-replica.ps1', 'check_codex.ps1', 'materials', 'README-CN.txt', 'Uninstall.ps1'],
     versionSources: [
       { kind: 'firstLines', file: 'README-CN.txt', maxLines: 5, pattern: '破甲包 v(\\d+\\.\\d+(?:\\.\\d+)?)' },
@@ -42,12 +44,12 @@ const PACKS = [
   },
   {
     id: 'codex-panghu',
-    name: 'Codex 破甲包 · 胖虎',
-    subtitle: 'keysmith 单文件注入 · model_instructions_file',
+    name: 'Codex 胖虎 · 旧载荷已隔离',
+    subtitle: '安全隔离 · 禁止运行随包 Python 与启动器',
     folder: 'codex-panghu',
     target: 'Codex CLI / 桌面端',
     accent: 'tiger',
-    note: 'keysmith v0.5.0：直写 config.toml 的 model_instructions_file + 隔离 hooks.json。与冷咖啡石井互斥，二选一。',
+    note: QUARANTINED_PACKS['codex-panghu'],
     expected: ['install.ps1', 'keysmith', 'prompts', 'manifest.sha256', 'README-CN.txt'],
     versionSources: [
       { kind: 'firstLines', file: 'README-CN.txt', maxLines: 3, pattern: 'v(\\d+\\.\\d+\\.\\d+)' },
@@ -183,12 +185,12 @@ const PACKS = [
   },
   {
     id: 'anti-gravity',
-    name: '反重力破甲包',
-    subtitle: 'AGL1 三通道 · 更新器冻结',
+    name: '反重力 · 旧载荷已隔离',
+    subtitle: '安全隔离 · 禁止运行旧代理载荷',
     folder: 'anti-gravity',
     target: 'Google Antigravity',
     accent: 'grape',
-    note: 'v3.2：rules + skills + plugins 三通道同时覆盖；旧同名 skill 自动挪走解除遮蔽；更新器冻结保留回读/只读/ACL。',
+    note: QUARANTINED_PACKS['anti-gravity'],
     expected: [
       'Install-OneClick.cmd',
       'Install-AntiGravity.ps1',
@@ -463,7 +465,7 @@ function formatTime(iso) {
 
 function renderReport(hub) {
   const lines = [];
-  lines.push('# 团子工作台 · 七包检查报告');
+  lines.push('# 团子工作台 · 工具包与隔离状态报告');
   lines.push('');
   lines.push(`- 生成时间：${formatTime(new Date().toISOString())}`);
   lines.push(`- 根目录：${hub.root || '（未选择）'}`);
@@ -487,7 +489,8 @@ function renderReport(hub) {
   for (const p of hub.packs || []) {
     lines.push(`## ${p.name}`);
     lines.push('');
-    lines.push(`- 目录：\`${p.path || '（未找到）'}\``);
+    lines.push(`- 目录：\`${p.path || (p.blockedReason ? '（已隔离，不解析载荷）' : '（未找到）')}\``);
+    if (p.blockedReason) lines.push(`- 隔离原因：${p.blockedReason}`);
     lines.push(`- 找到：${p.found ? '是' : '否'}`);
     if (p.found) {
       lines.push(`- 文件数：${p.fileCount}，目录数：${p.dirCount}，总体积：${formatBytes(p.bytes)}`);
@@ -959,7 +962,7 @@ function scanExeWide(exeNames) {
 }
 
 /**
- * 八个包的部署计划。
+ * 部署计划：隔离包没有安装/卸载/备份目标，仅保留历史只读证据定义。
  * evidence 判定"破甲是否生效"，全部来自实际侦察（不是猜的）：
  *   file     目录下存在该文件
  *   dir      该目录存在
@@ -968,10 +971,9 @@ function scanExeWide(exeNames) {
  */
 const DEPLOY_PLANS = {
   codex: {
-    // 直调 ps1 并带 -NoOpenLinks：包里的 cmd 不透传参数，ps1 默认会 start 浏览器弹推广链接
-    install: { file: 'install-replica.ps1', kind: 'ps1', args: ['-NoOpenLinks', '-SkipAstra6'] },
-    uninstall: { file: 'Uninstall.ps1', kind: 'ps1' },
-    backupDirs: [codexHome()],
+    install: null,
+    uninstall: null,
+    backupDirs: [],
     evidence: [
       {
         type: 'glob',
@@ -992,11 +994,9 @@ const DEPLOY_PLANS = {
     ]
   },
   'codex-panghu': {
-    // keysmith 单文件注入：install.ps1 -Action install 直写 config.toml 的 model_instructions_file
-    // 并默认隔离 hooks.json（与冷咖啡石井互斥）。-CodexDir 缺省时脚本自取 %CODEX_HOME% / ~/.codex
-    install: { file: 'install.ps1', kind: 'ps1', args: ['-Action', 'install'] },
-    uninstall: { file: 'install.ps1', kind: 'ps1', args: ['-Action', 'uninstall'] },
-    backupDirs: [codexHome()],
+    install: null,
+    uninstall: null,
+    backupDirs: [],
     evidence: [
       {
         type: 'contains',
@@ -1107,10 +1107,9 @@ const DEPLOY_PLANS = {
     ]
   },
   'anti-gravity': {
-    // 直接调 ps1 并带 -NoOpenLinks：包里的 cmd 会 start 浏览器打开推广链接
-    install: { file: 'Install-AntiGravity.ps1', kind: 'ps1', args: ['-NoOpenLinks'] },
-    uninstall: { file: 'Uninstall.ps1', kind: 'ps1' },
-    backupDirs: [path.join(HOME, '.gemini')],
+    install: null,
+    uninstall: null,
+    backupDirs: [],
     evidence: [
       {
         type: 'file',
@@ -1136,6 +1135,12 @@ const DEPLOY_PLANS = {
     ]
   }
 };
+
+for (const id of Object.keys(QUARANTINED_PACKS)) {
+  Object.freeze(DEPLOY_PLANS[id].backupDirs);
+  Object.freeze(DEPLOY_PLANS[id]);
+}
+Object.freeze(DEPLOY_PLANS);
 
 function detectPlatform(id) {
   const probe = PLATFORM_PROBES[id];
@@ -1253,6 +1258,8 @@ function checkEvidence(ev) {
 
 /** 验证某包破甲是否生效：全部 evidence 命中才算 */
 function verifyBreak(id) {
+  const blockedReason = getPackBlockReason(id);
+  if (blockedReason) return { id, hasCheck: false, active: null, items: [], blockedReason };
   const plan = DEPLOY_PLANS[id];
   if (!plan || !plan.evidence || !plan.evidence.length) {
     return { id, hasCheck: false, active: null, items: [] };
@@ -1403,7 +1410,11 @@ function resolvePythonBin() {
   return 'python';
 }
 
-function buildSpawn(script, packPath) {
+function buildSpawn(script, packPath, id) {
+  assertPackAllowed(id);
+  const plan = DEPLOY_PLANS[id];
+  if (!script || (script !== plan.install && script !== plan.uninstall)) throw new Error('不是该包的发布部署计划');
+  assertPackSourceAllowed(id, packPath);
   const full = path.join(packPath, script.file);
   if (!existsSyncPath(full)) return null;
 
@@ -1720,24 +1731,7 @@ function findCodexCliInfo() {
     if (p && existsSyncPath(p) && !candidates.some((c) => c.path === p)) candidates.push({ path: p, via });
   };
 
-  const actualVersionCache = new Map();
-  const actualVersionTuple = (p) => {
-    const known = versionTuple(p);
-    if (known) return known;
-    if (actualVersionCache.has(p)) return actualVersionCache.get(p);
-    let tuple = null;
-    try {
-      const isCmd = /\.(cmd|bat)$/i.test(String(p));
-      const file = isCmd ? process.env.ComSpec || 'cmd.exe' : p;
-      const args = isCmd ? ['/d', '/s', '/c', p, '--version'] : ['--version'];
-      const out = execFileSync(file, args, { encoding: 'utf8', timeout: 8000, windowsHide: true, maxBuffer: 1 << 20 });
-      tuple = versionTuple(String(out));
-    } catch {
-      tuple = null;
-    }
-    actualVersionCache.set(p, tuple);
-    return tuple;
-  };
+  // 路径探测不运行候选 exe/cmd；未知版本保持未知，绝不执行 --version。
 
   // 1) %LOCALAPPDATA%\OpenAI\<版本目录>\cli-native\x86_64-pc-windows-msvc\bin\codex.exe
   const openaiDir = path.join(LOCALAPPDATA, 'OpenAI');
@@ -1785,8 +1779,8 @@ function findCodexCliInfo() {
   if (!candidates.length) return { path: null, via: null, candidates: [] };
   const pool = candidates.slice();
   pool.sort((a, b) => {
-    const ta = actualVersionTuple(a.path) || [0, 0, 0];
-    const tb = actualVersionTuple(b.path) || [0, 0, 0];
+    const ta = versionTuple(a.path) || [0, 0, 0];
+    const tb = versionTuple(b.path) || [0, 0, 0];
     for (let i = 0; i < 3; i += 1) if (tb[i] !== ta[i]) return tb[i] - ta[i];
     return 0;
   });
@@ -1813,6 +1807,7 @@ function findGuiExe(id) {
  *                       降级通过、跳过 L4 —— 不再像以前那样一律报「找不到」
  */
 function probeRuntime(id) {
+  assertPackAllowed(id);
   const probe = PLATFORM_PROBES[id] || {};
   const chan = L4_CHANNELS[id] || { mode: 'gui' };
   const mode = chan.mode || 'gui';
@@ -1868,14 +1863,14 @@ function probeRuntime(id) {
 
 /** 每个平台的 L4 通道类型：cli 真发 / gui playwright 拉起 */
 const L4_CHANNELS = {
-  codex: { mode: 'cli' },
-  'codex-panghu': { mode: 'cli' },
+  codex: { mode: 'none', note: QUARANTINED_PACKS.codex },
+  'codex-panghu': { mode: 'none', note: QUARANTINED_PACKS['codex-panghu'] },
   dsh: { mode: 'gui-note', note: 'DSH 走 npx 临时缓存，无独立 CLI' },
   cursor: { mode: 'gui' },
   opencode: { mode: 'gui' },
   workbuddy: { mode: 'gui' },
   'workbuddy-ai': { mode: 'gui' },
-  'anti-gravity': { mode: 'gui' }
+  'anti-gravity': { mode: 'none', note: QUARANTINED_PACKS['anti-gravity'] }
 };
 
 /* ==================================================================
@@ -1900,7 +1895,7 @@ function embeddedPacksRoot() {
 function hasEmbeddedPacks() {
   const root = embeddedPacksRoot();
   if (!root) return false;
-  return PACKS.every((p) => isDirSync(path.join(root, p.folder)));
+  return RELEASE_PACK_IDS.every((id) => isDirSync(path.join(root, id)));
 }
 
 /* ==================================================================
@@ -2301,13 +2296,18 @@ function findScript(dir, standardFile, fuzzyRe) {
 function analyzeImportedDir(dir, platformId) {
   const def = PACKS.find((p) => p.id === platformId);
   if (!def) return null;
+  try {
+    assertPackSourceAllowed(platformId, dir);
+  } catch (e) {
+    return { platform: platformId, dir, readable: false, blockedReason: e.message, entries: [], missing: [], installScript: null, uninstallScript: null, version: null, versionSource: null };
+  }
   let entries = [];
   try {
     entries = fs.readdirSync(dir).sort();
   } catch {
     return { platform: platformId, dir, readable: false, entries: [], missing: def.expected.slice(), installScript: null, uninstallScript: null, version: null, versionSource: null };
   }
-  const missing = def.expected.filter((e) => !entries.some((entry) => matchesExpected(entry, e)));
+  const missing = missingExpectedEntries(dir, def.expected);
   const plan = DEPLOY_PLANS[platformId] || {};
   const installScript = findScript(dir, plan.install ? plan.install.file : null, INSTALL_SCRIPT_RE);
   const uninstallScript = findScript(dir, plan.uninstall ? plan.uninstall.file : null, UNINSTALL_SCRIPT_RE);
@@ -2346,8 +2346,7 @@ const RULE_FILE_TARGETS = {
     label: '.codex/AGENTS.md（全局指令层）'
   },
   'codex-panghu': {
-    // 胖虎分支同样落 .codex/AGENTS.md：model_instructions_file 与 AGENTS.md 是两条独立注入层，
-    // 词库追加不会破坏 keysmith 部署（AGENTS.md 本来就在 install.ps1 的 Sync-ExtraFiles 清单里）
+    // 仅普通文本词库管理；与已隔离 keysmith 包的安装/恢复完全分离。
     mode: 'append',
     file: () => path.join(codexHome(), 'AGENTS.md'),
     label: '.codex/AGENTS.md（胖虎分支全局指令层）'

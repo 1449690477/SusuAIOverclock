@@ -28,6 +28,8 @@ export default function ImportModal({
   const [busy, setBusy] = useState(false);
 
   const nameOf = (id?: string) => (id ? packs.find((p) => p.id === id)?.name || id : '—');
+  const blockOf = (id?: string) => packs.find((p) => p.id === id)?.blockedReason;
+  const selectedBlock = det?.blockedReason || det?.analysis?.blockedReason || blockOf(picked);
 
   const analyze = async (p: string) => {
     setInputPath(p);
@@ -56,7 +58,8 @@ export default function ImportModal({
   };
 
   const confirm = async () => {
-    if (!det) return;
+    if (!det || !picked) return;
+    if (selectedBlock) { toast('err', selectedBlock); return; }
     setBusy(true);
     try {
       if (det.inputKind === 'file') {
@@ -75,7 +78,7 @@ export default function ImportModal({
   };
 
   const isFile = det?.inputKind === 'file';
-  const canConfirm = det && det.kind !== 'unknown' ? Boolean(picked) : Boolean(picked);
+  const canConfirm = Boolean(picked) && !selectedBlock;
 
   return (
     <div className="overlay" onClick={onClose} data-testid="import-modal">
@@ -108,6 +111,7 @@ export default function ImportModal({
             <p style={{ fontSize: 11.5, color: 'var(--ink-faint)', marginTop: 14, lineHeight: 1.8, maxWidth: 460 }}>
               <b>单个规则文件</b>（.md / .mdc / .txt …）→ 直接注入到对应平台的规则位；<br />
               <b>包目录</b> → 注册为"用这个包"，之后安装 / 卸载 / 基线都走它。
+              <br />隔离包禁止从这里导入；普通 Codex 文本规则仍可在独立词库页面管理。
             </p>
           </div>
         ) : null}
@@ -124,6 +128,7 @@ export default function ImportModal({
 
         {step === 'result' && det ? (
           <>
+            {selectedBlock ? <div className="warn-box" role="status">来源或目标已隔离：{selectedBlock}</div> : null}
             <div className="block">
               <div className="kv">
                 <div className="kv-item">
@@ -166,11 +171,13 @@ export default function ImportModal({
                       <span style={{ flex: 1 }}>
                         <b>{nameOf(p.platform)}</b>
                         {p.analysis?.version ? ` · v${p.analysis.version}` : ''}
-                        {p.analysis?.missing?.length ? ` · 缺 ${p.analysis.missing.length} 项` : ' · 结构完整'}
+                        {p.blockedReason || p.analysis?.blockedReason || blockOf(p.platform)
+                          ? <span style={{ display: 'block' }}>{p.blockedReason || p.analysis?.blockedReason || blockOf(p.platform)}</span>
+                          : p.analysis?.missing?.length ? ` · 缺 ${p.analysis.missing.length} 项` : ' · 结构完整'}
                       </span>
                       <button
                         className="btn btn-mint btn-sm"
-                        disabled={busy}
+                        disabled={busy || Boolean(p.blockedReason || p.analysis?.blockedReason || blockOf(p.platform))}
                         onClick={async () => {
                           setBusy(true);
                           try {
@@ -207,7 +214,7 @@ export default function ImportModal({
                         卸载脚本 {det.analysis.uninstallScript || '无'}
                       </span>
                       <span className={`badge ${det.analysis.missing?.length ? 'badge-warn' : 'badge-ok'}`}>
-                        {det.analysis.missing?.length ? `缺 ${det.analysis.missing.length} 项` : '结构完整'}
+                        {det.analysis.blockedReason ? '已隔离，未分析载荷' : det.analysis.missing?.length ? `缺 ${det.analysis.missing.length} 项` : '结构完整'}
                       </span>
                     </div>
                   </div>
@@ -222,10 +229,12 @@ export default function ImportModal({
                         <button
                           key={p.id}
                           className={`btn btn-sm ${picked === p.id ? 'btn-mint' : 'btn-ghost'}`}
+                          disabled={busy || Boolean(p.blockedReason)}
+                          title={p.blockedReason || undefined}
                           onClick={() => setPicked(p.id)}
                           data-testid={`import-pick-${p.id}`}
                         >
-                          {p.name}
+                          {p.name}{p.blockedReason ? '（已隔离）' : ''}
                           {cand ? ` (${cand.score})` : ''}
                         </button>
                       );
@@ -239,7 +248,7 @@ export default function ImportModal({
                   ) : (
                     <p style={{ fontSize: 11.5, color: 'var(--ink-faint)', marginTop: 10, lineHeight: 1.7 }}>
                       <FolderOpen size={12} style={{ verticalAlign: -2, marginRight: 4 }} />
-                      将把 {nameOf(picked)} 的包目录指向这里，之后安装 / 卸载 / 基线都用这个包（不影响其它五个）。
+                      将把 {nameOf(picked)} 的包目录指向这里；安装 / 卸载前仍会重新检查发布策略与来源，历史导入不能解除隔离。
                     </p>
                   )}
                 </div>

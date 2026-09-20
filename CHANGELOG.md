@@ -2,9 +2,69 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+> **当前状态（2026-09-20）：1.5.5 / Electron 44.4.3 已完成本地客体隔离构建，仅 ZIP 交付；ClamAV 仍报告 29 个 Infected files、54 条告警，不是 AV 放行。** Windows 宿主仍受感染，51 个项目样本继续隔离。已发布 GitHub Release v1.5.5。1.5.4 及更早条目只作历史记录，旧安全保证失效，不要恢复或运行旧样本。详见 [SECURITY-1.5.5](./docs/SECURITY-1.5.5.md)。
+
 ---
 
-## [1.5.4] — 2026-09-18
+## [1.5.5] — 2026-09-20 · 本地构建完成，AV 告警未解除
+
+### 最终构建与运行时更新
+
+- 经用户后续明确批准在本机隔离打包，使用专用 VirtualBox 客体、Ubuntu 24.04 官方 20260911 镜像、全新虚拟磁盘；NAT / 回环转发，无共享剪贴板或共享目录。受感染宿主和虚拟化层仍有剩余风险，不是可信宿主证明。
+- 锁定官方 **Electron 44.4.3**，从最终构建移除 EOL Electron 33；旧 33 构建保留为已被替代的审计记录。完整运行时代码未改，打包 `.text` 与官方一致，仅正常品牌信息与 ASAR / 资源打包；这是正常安全升级，不是杀毒规避。
+- 移除旧 builder 缓存 / shim 变通；全新 npm registry 获取，514 条 SRI 记录、456 个安装包；客体 Node 22.23.2、npm 10.9.8、builder 25.1.8。缓存标识 `1.5.5-electron44.4.3` 避免复用 33 缓存。
+- 真实 NSIS → 7z → ASAR 解包核对 3066 个文件，版本和运行时配置一致；实际资源仅 5 包，3 包仍阻断，3134 条词库及材料字节保持一致。
+- 修复嵌套预期路径检测，消除 Cursor / WorkBuddy AI 的 5 项错误缺失提示。不承诺零功能变化或 3 个隔离安装器恢复。
+
+### 最终交付与实测
+
+- [本地交付 ZIP](./release/SusuAIOverclock-1.5.5-portable-electron44.4.3-isolated.zip)：115161469 字节，SHA-256 `81d0b280ffcc0765a139bab710f64cc794cdb5b6bb84ad4c1069cdf1bc01d883`。
+- 内含 `SusuAIOverclock-1.5.5-portable.exe`：114047016 字节，SHA-256 `089657d058dd647ae350be8936de3d536c127b66ac1ecd728067ff565887eb7b`。
+- 宿主内置模块在内存核验 67 个归档条目 / 1 个 EXE，归档和 EXE 哈希精确匹配客体；0 已知 IOC / 0 错误，未向宿主解压 EXE 或运行它。只交付归档以降低再感染暴露，不是无病毒保证；见[交付完整性报告](./release/1.5.5-DELIVERY-INTEGRITY.json)。
+- 最终测试 **31 项 / 29 通过 / 0 失败 / 2 条件跳过**：已退役胖虎载荷项和 Linux 不适用的 Windows junction 项。语法、TypeScript、Vite 均通过；最终输入工具 124 个二进制、产物 14 个二进制各为 0 已知 IOC / 0 错误。
+- 后续客体无网络 namespace 中，官方 Linux Electron 44.4.3 加载字节未改的最终 Windows ASAR / resources，未重新编译：**132 GUI 检查通过 / 20 截图 / 0 渲染错误**，涵盖 8 卡片、5 内嵌、3 阻断、9 次 IPC 执行前拒绝、5 项错误提示修复、3134 词库搜索 / 纯文本详情及设置。
+- 默认 Linux 启动因 SUID sandbox 配置错误失败，随后仅客体 GUI 测试使用 `--no-sandbox`；`app.isPackaged=false` 如实记录。没有安装 / 注入写入，未验证 Windows 原生 GUI、自解压、平台探测或五包实际安装器；旧 Wine / Electron 33 两次超时不算本版 Windows 验证。
+- [最终构建报告](./release/SusuAIOverclock-1.5.5-electron44.4.3-isolated-report.json)的 GUI pending 是归档生成时状态；后来[GUI 汇总](./release/gui-verification-1.5.5-electron44.4.3-ay5toza1/SUMMARY.json)更新这一状态。归档内当时的完整构建 / 扫描报告保持不变，不改 ZIP / 哈希。
+
+### 实际杀毒结果与未解除告警
+
+- ClamAV 1.5.3、官方库 28129（2026-09-20 06:26:26）扫描 26131 文件，包含源码 / 暂存 / 容器重复副本：**29 个 Infected files / 54 条告警**。签名行数为 `Win.Exploit.CVE_2015_6096-1` 18、`Img.Phishing.SvgJsPhishing-10044283-0` 30、`Html.Downloader.Satan-6249582-1` 6；未预期签名 0、限额警告 0，但不是 AV 通过。
+- 8 个 Markdown 来源路径对应两种真实 XXE / SVG 安全示例，6 条词库记录含相同内容。整库 JSON 的 Satan 命中来自跨记录 15 个关键词共现；3134 条逐记录完整引擎扫描中无单条 Satan 命中，不等于整库无告警。
+- 官方 44 参考 EXE 本次 AV 命中为 0；旧官方 33 的 Mikey 检测可复现，支持该项为运行时误报的判断，但未获厂商确认，不能延伸成全包无毒结论。
+- 保留原材料 / 词库，没有为隐藏告警而删除功能、拆分、编码或加白。React `<pre>` 仅作文本显示，但词库注入会写入下游 AI 规则，并非所有用途都惰性无害。剩余告警不同于旧 R/N 前置封装，仍须披露和独立复核。
+
+### 已应用的源码变更
+
+- 隔离 `codex`（应用原名「冷咖啡石井 v10.4」）、`codex-panghu`（胖虎独立分支）、`anti-gravity` 三条包部署路线，相关安装功能有意停用，等待可信替换来源。
+- 最终打包采用 5 包允许清单：`cursor`、`dsh`、`opencode`、`workbuddy`、`workbuddy-ai`。允许清单不等于安全认证。
+- 保留 8 张卡片及普通 UI / 文本词库 / 检测功能，增加上述嵌套路径修复和运行时升级。已完成有限 Linux GUI 实测，未验证 Windows 原生运行或真实安装，不承诺全部原有功能保留。
+- 包身份使用已确认的 Codex「冷咖啡石井」与胖虎独立分支标签；不能据本地副本命中归因官方厂商恶意。
+- 新增 `npm run test:security`、`npm run audit:security` 入口，以及 `scripts/quarantine-known-infection.cjs` 文件隔离工具。
+
+### 已执行的项目文件隔离
+
+- 先 dry-run，再 `--apply`，将 **51 个确认命中的项目文件**实际移至 `.security-quarantine-1.5.5/1789901641497-83836/*.quarantined`；移动前后均核对原始文件哈希，原字节保留、证据未删除。
+- 范围仅限本项目 `node_modules`、`packed-packs`、`release`、`release-final`、`release-next`。原污染路径（包括 1.5.4 便携 EXE）不再存在；隔离目录中的 `summary.json` 与 `manifest.jsonl` 保存映射。
+- 隔离区已被 Git 忽略，不作为分发输入；只是改名与来源路径分离，不是完整沙箱或 NTFS 执行拒绝，禁止恢复样本。未停止活动恶意程序、未做系统清理或更改操作系统配置。
+
+### 阶段一实测（客体构建前的历史里程碑）
+
+- 隔离前：项目清单 **277 个二进制 / 51 个受影响文件 / 0 错误**；构建预检 **184 个二进制 / 9 个受影响文件 / 0 错误**。报告：`release/security-audit-1.5.5-1789901531005.json`。
+- 隔离后：项目清单 **226 个二进制 / 0 个已知 IOC 命中 / 0 错误**；构建预检 **177 个二进制 / 2 个受影响文件**（TEMP `R.exe`、`HD_X.dat`），另有 **2 项预期的必需工具缺失**（x64 `7za`、`app-builder` 已隔离）。报告：`release/security-audit-1.5.5-1789901684401.json`。
+- 当时构建预检明确排除未使用的 macOS/Linux 签名缓存树；有界 IOC 检查不等于完整杀毒。宿主直接构建当时被阻断，后续在获准的客体内以全新工具完成构建；旧压缩包 / ASAR 不因此获安全背书。
+- 在 `DANGO_TEST_REAL_PACKS=1` 下，使用官方签名 / 哈希已核验的系统 Node 内置测试运行器执行 `node --test tests/security-quarantine.test.cjs tests/security-preflight.test.cjs`：**tests 28 / pass 28 / fail 0 / skipped 0**。真实五包元数据检查条目数为 Cursor 33、DSH 2914、OpenCode 127、WorkBuddy 827、WorkBuddy AI 34；名称 / 来源守卫均通过，未执行包脚本、安装器或载荷，不是恶意代码放行或应用回归。
+- core / main / preload、2 个新增策略模块及预检 / 清单收集 / 隔离 / 便携补丁 / 打包 / 构建前钩子，共 **11 个 JS 文件 `node --check` 通过**；`git diff --check` 通过。
+- 1.5.4 样本共同封装及 `R.exe` / `N.exe` 证据保留于完整报告；初始入口、家族、C2、数据窃取未确认。
+
+### 仍未完成与文档边界
+
+- Windows 宿主未清理，虚拟化层未获独立可信证明；本地构建完成不等于 AV 放行或 Windows 功能全验收。后续仍需在独立可信 Windows 环境验证原生 GUI、自解压、允许包安装器并复核内容告警。
+- 旧依赖、缓存、EXE、旧输出和隔离证据不得恢复为构建输入；旧套件须先排除载荷执行路径。历史截图、28/28 以及旧 Wine 结果不代替最终版本验证。
+- README 保留停止并核对报告的拦截指引，不提供杀毒加白 / SmartScreen 绕过。用户原有 `_patch_installer_v15.py`、`parse-installer.ps1` 保留，未读取账号令牌、未清理宿主感染；已发布 GitHub Release v1.5.5。
+
+---
+
+## [1.5.4] — 2026-09-18 · 历史记录，现有产物停止使用
 
 ### 新增 WorkBuddy AI 国际版破甲卡片
 

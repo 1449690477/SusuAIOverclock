@@ -2,20 +2,37 @@
 
 # 苏苏 AI超频 · Susu AI Overclock
 
-**八大 AI 工具包统一部署台 · 四层穿透验证 · 模型会话超频监控**
+**8 张平台卡片 · 5 个发布允许清单包 · 3 条部署路线安全隔离**
 
-Windows x64 桌面端 · Electron 33 + React 18 + TypeScript 5 · 冰蓝瓷白界面 · 免安装单文件便携版
+Windows x64 本地隔离构建 · Electron 44.4.3 + React 18 + TypeScript 5 · 冰蓝瓷白界面
 
-[![Platform](https://img.shields.io/badge/platform-Windows%20x64-0078D4?style=flat-square)](https://github.com/1449690477/SusuAIOverclock/releases)
-[![Electron](https://img.shields.io/badge/Electron-33-47848F?style=flat-square&logo=electron&logoColor=white)](https://www.electronjs.org/)
+![Platform](https://img.shields.io/badge/platform-Windows%20x64-0078D4?style=flat-square)
+[![Electron](https://img.shields.io/badge/Electron-44.4.3-47848F?style=flat-square&logo=electron&logoColor=white)](https://www.electronjs.org/)
 [![React](https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react&logoColor=black)](https://react.dev/)
-[![Version](https://img.shields.io/badge/version-1.5.4-2ea44f?style=flat-square)](https://github.com/1449690477/SusuAIOverclock/releases/tag/v1.5.4)
-[![Downloads](https://img.shields.io/github/downloads/1449690477/SusuAIOverclock/total?style=flat-square&color=6eb4ee)](https://github.com/1449690477/SusuAIOverclock/releases)
+[![Version](https://img.shields.io/badge/1.5.5-local%20build%20%7C%20AV%20warnings-orange?style=flat-square)](./docs/SECURITY-1.5.5.md)
 [![License](https://img.shields.io/badge/license-MIT-97CA00?style=flat-square)](./LICENSE)
 
-**最新版：** [下载 `SusuAIOverclock-1.5.4-portable.exe`](https://github.com/1449690477/SusuAIOverclock/releases/download/v1.5.4/SusuAIOverclock-1.5.4-portable.exe)
+**1.5.5 / Electron 44.4.3 已完成本地虚拟机隔离构建，仅以 ZIP 交付，未发布到 GitHub。**
+
+**杀毒告警仍未解除：ClamAV 报告 29 个 Infected files、54 条告警，不能称 AV 通过或无病毒。Windows 宿主仍受感染。**
+
+[本地交付 ZIP：SusuAIOverclock-1.5.5-portable-electron44.4.3-isolated.zip](./release/SusuAIOverclock-1.5.5-portable-electron44.4.3-isolated.zip)（不是公开下载发布或运行放行）
+
+[安全报告](./docs/SECURITY-1.5.5.md) · [发布目录可直接阅读的摘要](./release/1.5.5-SECURITY-REPORT.md)
 
 </div>
+
+---
+
+## 当前安全状态（2026-09-20）
+
+- 旧 1.5.4 EXE、部分依赖及内嵌包的 `R.exe` / `N.exe` 前置封装证据仍有效，51 个项目文件继续隔离。最终新包未命中这些已知 IOC，但仍有下述内容类杀毒告警，两者不能混同。
+- 经用户后续明确批准在本机隔离打包，已使用专用 VirtualBox 客体、Ubuntu 24.04 官方 20260911 镜像与全新虚拟磁盘，NAT / 回环转发，无共享文件夹或共享剪贴板。**受感染 Windows 宿主及虚拟化层仍是剩余风险，这不是可信宿主证明或系统清理。**
+- ClamAV 1.5.3、官方库 28129（2026-09-20 06:26:26）扫描 26131 个文件（含源码、暂存和归档重复副本），报告 29 个 Infected files / 54 条告警：XXE 示例相关 18 条、SVG 示例相关 30 条、整库 JSON 的 Satan 签名 6 条。未出现其他未预期签名或扫描限额警告，**仍不等于 AV 放行**；详见[完整分析](./docs/SECURITY-1.5.5.md)。
+- 遇到 SmartScreen、未知发布者或杀毒拦截时，**停止运行，先核对安全报告中的文件身份、证据和待完成验证**；不要绕过拦截、关闭防护或添加杀毒排除项。
+- 已经 dry-run 后执行 `scripts/quarantine-known-infection.cjs --apply`，将项目内 51 个确认命中文件实际移至 `.security-quarantine-1.5.5/1789901641497-83836/*.quarantined`。移动前后均核对原始哈希，字节未改、证据未删除；原污染路径（含 1.5.4 EXE）已不存在。
+- 移动范围仅限本项目 `node_modules`、`packed-packs`、`release`、`release-final`、`release-next`。隔离目录中的 `summary.json` / `manifest.jsonl` 记录映射，已被 Git 忽略且不作为分发输入。这只是文件名与来源路径分离，不是沙箱或 NTFS 禁止执行；不要恢复样本。
+- 没有清理 Windows 宿主或停止其活动感染，没有借此访问账号令牌。旧压缩包 / ASAR 未获全面放行，未移动的旧产物也不可沿用。新 EXE 未解压到宿主或在宿主运行，仅交付 ZIP 并以内置模块在内存核验，降低再感染暴露而非保证免疫。
 
 ---
 
@@ -32,26 +49,32 @@ Windows x64 桌面端 · Electron 33 + React 18 + TypeScript 5 · 冰蓝瓷白�
 
 ## 这是什么
 
-一个 Windows 桌面工作台，把散落各处的 **8 个 AI 客户端工具包**收进同一个冰蓝界面：
+一个 Windows 桌面工作台，在同一界面保留 **8 张平台卡片**。最终 1.5.5 产物实际内嵌 **5 个允许清单包**，另 **3 条包部署路线已隔离**：
 
-| 卡片 | 内嵌包 | 配置根 |
+| 卡片 / 包 ID | 包版本记录 | 1.5.5 源码策略 |
 | :-- | :-- | :-- |
-| Codex 破甲包 · 冷咖啡石井 | v10.4 | `~/.codex` |
-| Codex 破甲包 · 胖虎 | v5.0 | 独立 hooks 分支 |
-| Cursor 破甲包 | 懒人包 v1.2 | `~/.cursor/rules` |
-| DSH 破甲懒人包 | v5.7.0 | `~/.dsh` |
-| OpenCode 破甲包 | 内嵌 | 包内脚本 |
-| WorkBuddy 破甲包 | v4.4 国内版 | `~/.workbuddy` |
-| WorkBuddy AI 国际版 | 懒人包 v1.3 | `~/.workbuddy-ai` |
-| 反重力破甲包 | v3.2 | `~/.gemini` |
+| Codex · 冷咖啡石井（`codex`） | v10.4 | 阻断，等待可信替换来源 |
+| Codex · 胖虎（`codex-panghu`） | v5.0 | 阻断，独立分支，等待可信替换来源 |
+| Cursor（`cursor`） | 懒人包 v1.2 | 已内嵌，非 AV 放行 |
+| DSH（`dsh`） | v5.7.0 | 已内嵌，非 AV 放行 |
+| OpenCode（`opencode`） | 内嵌 | 已内嵌，非 AV 放行 |
+| WorkBuddy（`workbuddy`） | v4.4 国内版 | 已内嵌，非 AV 放行 |
+| WorkBuddy AI 国际版（`workbuddy-ai`） | 懒人包 v1.3 | 已内嵌，非 AV 放行 |
+| 反重力（`anti-gravity`） | v3.2 | 阻断，等待可信替换来源 |
 
-它做的事很具体：**认路径 → 调脚本 → 验效果 → 记基线**。所有安装 / 卸载都是调用各包目录里**自带的脚本**，软件本身不生成、不改写任何注入内容。国内 WorkBuddy 与国际 WorkBuddy AI 是两张独立卡片，配置根互不覆盖。
+允许清单是构建范围限制，**不是对这 5 个包的安全认证**。3 个隔离包的部署功能有意停用，不承诺全部原有功能保留。普通 UI、词库与检测逻辑保留，并修复 Cursor / WorkBuddy AI 嵌套预期路径导致的 5 项错误缺失提示；客体 Linux GUI 已做有限实测，但未验证 Windows 原生 GUI、便携自解压或五包真实安装器。
+
+Codex 包使用已确认名称「冷咖啡石井 v10.4」，胖虎是另一分支。本地副本命中不代表已证明官方厂商或原作者恶意。国内 WorkBuddy 与国际 WorkBuddy AI 仍为两张卡片，配置根分别为 `~/.workbuddy`、`~/.workbuddy-ai`。
 
 ---
 
 ## 界面展示
 
-当前界面是 **v1.5.4 冰蓝瓷白**：背景光球 / 斜扫光带 / 标题栏流光，八张卡片一张工作台。
+最新证据为[最终 Windows ASAR 在 Linux Electron 44.4.3 下的 GUI 汇总](./release/gui-verification-1.5.5-electron44.4.3-ay5toza1/SUMMARY.json)：132 项检查通过，20 张截图；这不是 Windows 原生运行验证。
+
+[查看本轮 20 张截图](./release/gui-verification-1.5.5-electron44.4.3-ay5toza1/gui-electron44.4.3-linux-no-sandbox-20260920T150459Z-coykj9fm/screenshots/)
+
+以下是 **v1.5.4 历史截图**，仅展示界面设计，不是 1.5.5 的实机验证，也不表示隔离包现可安装。
 
 ![工具箱总览](./docs/screenshots/toolbox.png)
 
@@ -69,11 +92,13 @@ Windows x64 桌面端 · Electron 33 + React 18 + TypeScript 5 · 冰蓝瓷白�
 
 ## 核心能力
 
-### 1. 八包统一管理
+以下是功能设计；本轮只验证了后文明确列出的界面与阻断行为，不能将其扩大为全部功能通过。涉及启动客户端、脚本或安装器的路径仍需独立验证；不得用旧二进制或隔离样本补齐。
+
+### 1. 八张卡片管理，五包允许发布、三包阻断
 
 - **自动识别安装路径**：扫常见安装目录 + 配置目录，找不到才让你手动选
 - **真实平台图标**：直接从各客户端 exe 提取，不是手绘贴图
-- **一键安装 / 卸载**：调用包内自带的 `Install-*` / `Uninstall-*` / `setup.py`，单包或全部，日志实时滚屏
+- **部署入口**：原设计调用包内安装 / 卸载脚本；1.5.5 已隔离 3 条包部署路线，不再承诺八包全部可部署。其余 5 包也须经可信源审查和干净环境验证后发布
 - **装前备份**：可把 `~/.codex`、`~/.dsh`、`~/.gemini`、`~/.workbuddy`、`~/.workbuddy-ai` 等配置目录整份复制到本地备份区
 - **包信息自动读取**：从 `package.json` / `README-CN.txt` / 安装脚本顶部注释里解析版本号与来源
 - **基线快照比对**：给每个包建 SHA-256 基线，之后随时比对，精确列出新增 / 删除 / 修改
@@ -81,20 +106,20 @@ Windows x64 桌面端 · Electron 33 + React 18 + TypeScript 5 · 冰蓝瓷白�
 
 ### 2. 四层穿透验证（L1 → L4）
 
-对任意卡片点「监控」，按四层逐级诊断，任一失败即停，并告诉你**在哪一层、为什么、怎么修**：
+代码保留四层诊断设计；这些层级检查功能状态，**不代替恶意代码检测**，也未在 1.5.5 实机验证：
 
 | 层 | 检查内容 | 失败意味着 |
 | :-- | :-- | :-- |
-| **L1 文件层** | 破甲文件是否写到位 | 没装 / 被覆盖 → 回去点「安装」 |
+| **L1 文件层** | 规则文件是否写到位 | 没装 / 被覆盖；先核对隔离状态，不直接重装旧包 |
 | **L2 配置层** | 配置文件可解析且已注册 | 配置损坏 → 核对路径 / codex 的 models.json 枚举 |
 | **L3 进程层** | 客户端 / CLI 能否启动 | 没装好 / 路径变了 / 被占用 |
 | **L4 会话层** | 发激活口令、抓真实回复、分析特征 | 模型拒绝 / 无回复 / 特征未命中 |
 
-- **CLI 通道**（codex）：真用 `codex exec` 非交互发口令抓 stdout（`approval_policy=never` + `sandbox_mode=read-only`，不动文件）
-- **GUI 通道**（cursor / workbuddy / workbuddy-ai / anti-gravity / opencode）：playwright 短暂拉起客户端，定位输入框发口令抓回复
-- 回复分析维度：石井特征 / ROUTE 标记 / 思考过程 / 模型拒绝 / AI 声明残留 —— 全部命中才判「真生效」
+- **CLI 通道设计**：通过 `codex exec` 发口令并读取 stdout；命令参数不构成被调用二进制无害的证明
+- **GUI 通道设计**：通过 Playwright 启动客户端并读取回复；当前不在受感染宿主执行
+- 回复特征分析只用于功能诊断，不构成安全结论
 
-> GUI 通道会把对应客户端短暂顶到前台几秒，验证完自动关闭，属正常现象。
+> 旧版启动行为与截图属于历史资料，待干净环境重新验证，不能据此运行隔离路线。
 
 ### 3. 导入引擎（支持单个规则文件）
 
@@ -107,63 +132,48 @@ Windows x64 桌面端 · Electron 33 + React 18 + TypeScript 5 · 冰蓝瓷白�
   - `append`：以 `<!-- shiyi-imported:name:start/end -->` 标记块追加，追加前自动备份
 - **识别不了也不硬塞**：候选同分或 0 分时不预选，由你手选平台，避免误注入
 
-### 4. 内嵌包开箱即用
+### 4. 内嵌包发布范围
 
-打包时把 `packed-packs/` 打进 `resources/packs`（**不进 asar**，因为脚本需要真实文件系统）。首次启动无需选目录，八个包直接可用。
+最终产物的 `resources/packs` 仅包含上述 5 包；`codex`、`codex-panghu`、`anti-gravity` 继续阻断，不得沿用旧副本恢复部署。真实 NSIS → 7z → ASAR 解包核对了 3066 个文件，版本与资源配置一致；这不是在 Windows 上启动便携 EXE 的测试。
 
-路径解析三级降级：**imported（导入的） > external（外部目录） > embedded（内嵌）**，卡片上如实标注当前来源。
+原路径解析设计为 **imported > external > embedded**。来源徽章只是位置说明，导入或指定外部目录不等于通过安全审核。
 
 ### 5. 破甲词库
 
-内置 3134 条提示词、21 个分类，可注入到 Cursor / Codex / DSH / WorkBuddy / OpenCode / Anti-Gravity。词库注入和「导入规则」分区存放，清空词库不会误删导入块。
+最终保留 3134 条词库，材料与词库字节保持一致；本轮 Linux GUI 已验证词库加载、搜索和纯文本详情。React `<pre>` 显示不执行活动 HTML 或 OS 命令，**但用户使用词库注入会写入下游 AI 规则，不能称所有用途都惰性无害**。本轮未执行注入 / 清理或五包安装器。
 
 ---
 
-## 快速开始
+## 本地交付与完整性
 
-### 方式一：下载便携版（推荐）
+[交付 ZIP](./release/SusuAIOverclock-1.5.5-portable-electron44.4.3-isolated.zip)仅作为本地归档交付，不是 GitHub Release，不表示允许绕过杀毒运行。
 
-从 [Releases](https://github.com/1449690477/SusuAIOverclock/releases/tag/v1.5.4) 下载 `SusuAIOverclock-1.5.4-portable.exe`，双击即用，免安装。
+| 对象 | 字节数 | SHA-256 |
+| :-- | --: | :-- |
+| `SusuAIOverclock-1.5.5-portable-electron44.4.3-isolated.zip` | 115161469 | `81d0b280ffcc0765a139bab710f64cc794cdb5b6bb84ad4c1069cdf1bc01d883` |
+| ZIP 内 `SusuAIOverclock-1.5.5-portable.exe` | 114047016 | `089657d058dd647ae350be8936de3d536c127b66ac1ecd728067ff565887eb7b` |
 
-> 首次运行 Windows 会弹「已保护你的电脑」——点 **更多信息 → 仍要运行**。原因是没有代码签名证书，不是软件有问题。
+宿主以内置模块在内存中核对归档与 EXE 哈希，均匹配客体结果；共 67 条目、1 个 EXE，0 个已知 IOC 命中、0 错误，**没有将 EXE 解压到宿主或运行它**。[交付完整性报告](./release/1.5.5-DELIVERY-INTEGRITY.json)明确 `antivirusClearance=false`。归档内含生成时的构建 / 扫描报告，后续 GUI 结果在外部汇总补充，未改动 ZIP 或哈希。
 
-**启动速度**：第一次启动约 6 秒（需解压到本地缓存），之后每次约 0.8 秒。
+最终版本固定官方 Electron **44.4.3**，移除已 EOL 的 33 运行时选择；旧 Electron 33 构建只保留为已被替代的审计记录。完整官方运行时代码未改动，打包 `.text` 与官方一致，仅正常品牌信息及 ASAR / 资源打包。版本升级不是杀毒规避；移除旧 builder 缓存 / shim 变通，缓存标识为 `1.5.5-electron44.4.3`，避免复用旧 33 缓存。
 
-缓存目录 `%LOCALAPPDATA%\SusuAIOverclock-cache\1.5.4`，约 766 MB。删掉它下次会重新走一次冷启动，其余无副作用。
-
-### 方式二：从源码构建
-
-```bash
-git clone https://github.com/1449690477/SusuAIOverclock.git
-cd SusuAIOverclock
-npm install
-
-npm test               # core 单元测试
-npm run build          # 前端构建到 dist-electron/
-npm run smoke          # playwright 真机冒烟
-npm run pack:portable  # 产出 release/SusuAIOverclock-<version>-portable.exe
-```
-
-> 仓库不含 `packed-packs/`（工具包本体体积大，不便入库）。要构建带内嵌包的完整版，把八个包放到 `packed-packs/<平台id>/` 下再打包；否则软件仍可用「选择根目录」加载外部包。
-
-### 命令行参数
-
-```bat
-:: 直接指定根目录，跳过对话框
-SusuAIOverclock-1.5.4-portable.exe --root "C:\path\to\packs"
-
-:: 受限环境（终端 / CI 自动化）放宽 Chromium 沙箱
-set DANGO_NO_SANDBOX=1
-SusuAIOverclock-1.5.4-portable.exe
-```
+后续需在独立可信 Windows 环境复核原生 GUI、便携自解压及允许包安装器，并继续处理 AV 告警；不要把受感染宿主或其虚拟化层当成已获可信证明。旧依赖、缓存、隔离样本和旧输出不能作为重建来源。
 
 ---
 
 ## 更新日志
 
-完整记录见 [`CHANGELOG.md`](./CHANGELOG.md)。1.5 系列摘要：
+完整记录见 [`CHANGELOG.md`](./CHANGELOG.md)。历史测试、性能与截图不构成 1.5.5 验证，旧版安全保证已失效。
 
-### [1.5.4] — 2026-09-18 · 当前
+### [1.5.5] — 2026-09-20 · 本地隔离构建完成，AV 告警未解除
+
+- 最终固定官方 Electron 44.4.3；移除 EOL 33、旧缓存 / shim 变通，交付 ZIP，不把原生 EXE 暴露给宿主文件系统。
+- 保留 8 卡片、5 内嵌包、3134 条词库，3 条部署路线有意停用；修复 Cursor / WorkBuddy AI 的 5 项嵌套路径误提示。
+- 最终测试 31 项：29 通过、0 失败、2 条件跳过；语法 / TypeScript / Vite 通过。Linux 加载最终 Windows ASAR 的 GUI 132 项通过；不冒充 Windows 验证。
+- 51 个旧项目样本继续隔离；最终工具 124 个二进制、产物 14 个二进制均无已知 IOC 命中，但实际 ClamAV 仍有 29 文件 / 54 条内容告警。
+- 早期宿主阻断及 28/28 记录保留为历史里程碑，不覆盖本次客体结果。本版已发布 GitHub Release v1.5.5。
+
+### [1.5.4] — 2026-09-18 · 历史记录，停止使用现有产物
 
 - 新增 **WorkBuddy AI 国际版** 独立卡片（懒人包 v1.3），不替换国内 WorkBuddy v4.4
 - 配置根锁死 `~/.workbuddy-ai`，与 `~/.workbuddy` 隔离
@@ -206,13 +216,13 @@ SusuAIOverclock-1.5.4-portable.exe
 
 ## 安全与边界
 
-**这个软件本身不做注入。** 它只做三件事：读包目录、调用包内已存在的脚本、验证结果。
+源码层的 IPC 隔离、路径检查、备份和本地数据目录设计，不足以证明被封装的 EXE、依赖或安装器安全。**撤回旧文档中「软件无问题」「杀软属误报」及绝对无上传等安全保证**；目前没有病毒扫描放行结论，也未确认是否发生数据窃取。
 
-- 不生成、不改写任何注入内容
-- 不给渲染层传任意路径执行 —— 所有路径都来自已选根目录或系统对话框
-- 渲染进程与主进程之间走 `contextIsolation` + preload 白名单 IPC（`dango:*`）
-- 导入操作落地前**自动备份**原文件
-- 数据只存在本地 `userData` 目录（被污染时自动降级到 `~/.dango-desk` → 临时目录），不上传任何内容
+- 已同时实施源码执行 / 打包阻断和 51 个项目文件的物理移动隔离；原字节保留，不是删除证据、完整执行隔离或清理操作系统。
+- 已确认本地样本共同封装与写出、启动载荷行为；初始感染入口、家族、C2 和数据窃取尚未确认。
+- 不把本地包名、官方产品名或证书异常直接当作恶意归因。
+- 历史文件隔离仅限上述五个项目目录，没有清理 Windows 活动感染或访问令牌。用户原有未跟踪文件 `_patch_installer_v15.py`、`parse-installer.ps1` 保留，未提交 / 推送（与本版发布渠道无关）。
+- 新包的内容签名告警不同于旧 R/N 前置封装；保留告警与原文，没有为隐藏检测而拆分、编码、加白或删除功能。不能将所有告警统称误报或宣称「所有病毒清光」。
 
 ---
 
@@ -220,34 +230,31 @@ SusuAIOverclock-1.5.4-portable.exe
 
 | 现象 | 原因 | 解决 |
 | :-- | :-- | :-- |
-| 弹「已保护你的电脑」/ 未知发布者 | 无代码签名证书 | 更多信息 → 仍要运行 |
-| 杀软报毒 / 拦截 | 脚本类工具包的常见误报 | 把 exe 与包目录加入白名单 |
-| 第一次启动慢（约 6 秒） | 需把内嵌包解压到本地缓存 | 正常现象，之后每次约 0.8 秒 |
-| 缓存目录占约 766 MB | 加速的代价，缓存八包解压结果 | 可随时删除，下次重新解压 |
-| `TypeError: Cannot read properties of undefined (reading 'app')` | 父进程污染了 `ELECTRON_RUN_AS_NODE=1`，electron.exe 退化成纯 Node 模式 | 清掉该环境变量，或直接双击 exe |
-| `Error: Failed to get 'userData' path` | `%APPDATA%` 被污染或不存在 | v1.2+ 已自动降级到 `~/.dango-desk` / 临时目录 |
-| 渲染进程 / GPU 进程 fatal | 无 GPU 或受限会话 | 默认保留硬件加速；极少数远程桌面 / 老旧显卡黑屏时再单独排查 |
-| `process failed to launch`（playwright） | env 里残留 `ELECTRON_RUN_AS_NODE` | smoke 脚本已自动清除 |
+| SmartScreen / 未知发布者 / 杀毒拦截 | 原因需核查；本次已有真实封装载荷证据 | 停止运行，核对[报告](./docs/SECURITY-1.5.5.md)，保留防护，不添加排除项 |
+| 获取 1.5.5 | 最终 Electron 44.4.3 已本地构建，仅归档交付，AV 未放行 | 使用上方本地 ZIP / 报告核对身份，不在受感染宿主解压运行 |
+| 卡片仍在但隔离包不能安装 | 3 条部署路线被有意阻断 | 等待可信替换来源，不从旧缓存或外部目录绕回 |
+| GUI 132 项通过是否等于 Windows 可用 | 使用官方 Linux Electron 加载最终 Windows ASAR；`app.isPackaged=false` | Windows 原生 GUI、自解压和五包安装器仍未验证 |
+| 零已知 IOC 命中为何还有报毒 | IOC 检查只覆盖已知封装；ClamAV 命中了保留的安全示例及整库内容 | 按报告区分范围，不据零 IOC 宣称 AV 通过，不绕过拦截 |
+| 删缓存是否等于清除感染 | 缓存不等于全部感染范围 | 本次未做系统清理，不以删除缓存或源码修复宣告宿主干净 |
 
 ---
 
-## 测试
+## 本轮实测
 
-```bash
-npm test     # core 单元测试（识别 / 打分 / 路径解析 / 导入落地 / 八包部署计划）
-npm run smoke # 真机冒烟：引导空态 + 八卡片部署 + 内嵌开箱即用 + 深度验证全流程
-node tests/verify-fast-start.cjs # 冷启动 / 热启动耗时对比（校验缓存命中）
-```
+| 范围 | 最终结果 | 限制 |
+| :-- | :-- | :-- |
+| 客体依赖 | Node 22.23.2 / npm 10.9.8 / builder 25.1.8；官方 npm registry 514 条 SRI 记录，安装 456 包 | 全新依赖，不复用宿主旧工具 |
+| 测试与编译 | 31 项，29 通过、0 失败、2 条件跳过；语法、TypeScript、Vite 通过 | 跳过已退役胖虎载荷相关项及 Linux 不适用的 Windows junction 项 |
+| 已知 IOC 检查 | 最终输入工具 124 个二进制、最终产物 14 个二进制，各 0 命中 / 0 错误 | 不是全恶意代码检测 |
+| 包装核验 | 真实 NSIS / 7z / ASAR 解包，3066 文件逐一比较 | 不是 Windows 自解压运行测试 |
+| Linux ASAR GUI | 132 检查通过、20 截图、渲染错误 0；8 卡片 / 5 内嵌 / 3 阻断、9 次 IPC 执行前拒绝、5 项误提示修复、3134 词库搜索 / 纯文本详情与设置通过 | 最终 Windows `app.asar` / resources 未重编译，未执行安装 / 注入写入 |
+| ClamAV | 26131 文件，29 个 Infected files，54 告警行 | 含跨源码 / 暂存 / 容器重复；告警未解除，不是 AV 通过 |
 
-仓库内 `tests/` 还包含：
+GUI 在客体无网络 namespace 内使用官方 Linux Electron 44.4.3。默认启动遇到 SUID sandbox 配置错误，随后**只在客体测试进程**使用 `--no-sandbox` 回退；如实记录 `app.isPackaged=false`，没有伪装成 Windows 已打包运行。旧 Electron 33 的两次 Wine 超时仅作历史记录。
 
-| 脚本 | 用途 |
-| :-- | :-- |
-| `single-file-import.mjs` | 隔离 HOME 下的单文件导入端到端验证 |
-| `dialog-config.mjs` | 拦截 `dialog.showOpenDialog` 断言 properties 配置 |
-| `verify-single-packed.mjs` | 打包产物真 exe 的单文件导入验证 |
-| `verify-portable.mjs` | 便携版解包后完整性验证 |
-| `verify-fast-start.cjs` | 冷 / 热启动计时，验证缓存加速生效 |
+[最终构建 / AV 报告](./release/SusuAIOverclock-1.5.5-electron44.4.3-isolated-report.json)生成时 GUI 尚待执行；后续[GUI 汇总](./release/gui-verification-1.5.5-electron44.4.3-ay5toza1/SUMMARY.json)更新这一状态，不修改归档。**仍未验证 Windows 原生 GUI、便携自解压、Windows 平台探测和五包实际安装器；未运行深度验证、用户 CLI、hooks、备份恢复或词库注入。**
+
+安全入口仍为 `npm run test:security`、`npm run audit:security`；旧执行型测试须先审查，不应为复测调用旧载荷。
 
 ---
 
@@ -263,10 +270,14 @@ dango-desk/
 │  ├─ App.tsx           # 主界面与状态
 │  ├─ components/       # 工具箱 / 词库 / 详情 / 深度验证 / 导入 / 设置
 │  └─ types.ts          # 渲染层与 IPC 的类型契约
-├─ docs/screenshots/    # GitHub 展示用界面截图
-├─ tests/               # 单元 + 真机冒烟 + 打包产物验证
-├─ packed-packs/        # 八个工具包本体（不入库，构建时打入 resources/packs）
+├─ docs/SECURITY-1.5.5.md # 当前安全证据与重建门槛
+├─ docs/screenshots/    # 历史界面截图，非 1.5.5 验证
+├─ release/1.5.5-SECURITY-REPORT.md # 用户可直接阅读的安全摘要
+├─ tests/               # 最终 31 项：29 通过、2 条件跳过；旧执行型测试须先审查
+├─ packed-packs/        # 本地包副本；后续发布仅限 5 包允许清单，仍需独立审核
 ├─ scripts/
+│  ├─ quarantine-known-infection.cjs # 已执行 dry-run / --apply，样本字节保留
+│  ├─ preflight-security.cjs # 已知 IOC 与发布前置检查
 │  ├─ pack-portable.cjs
 │  └─ capture-github-shots.cjs
 └─ build/
@@ -280,7 +291,7 @@ dango-desk/
 
 [MIT](./LICENSE) © Wanghan
 
-`packed-packs/` 内的八个工具包各自遵循其自身许可，不在本仓库分发范围内。
+工具包各自遵循其自身许可，不在本仓库分发范围内；许可证不构成安全认证，也不解除隔离限制。
 
 ---
 

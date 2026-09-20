@@ -18,12 +18,10 @@ trace('=== main.cjs 开始执行 ===');
 /**
  * main.cjs — Dango Desk 主进程
  *
- * 设计红线（写死在这里，UI 也无法越权）：
- *   1. 只做读：列目录 / 读文本 / 算哈希 / 比对 / 导出报告。
- *   2. 从不用 child_process 执行被管理目录里的任何脚本
- *      （.ps1 .cmd .bat .py .vbs .js 一律不执行）。
- *   3. 从不写入被管理的目录，只写 Electron userData（设置 / 基线 / 报告）。
- *   4. 渲染层无 node 权限，路径只能来自目录选择对话框或已落盘的 state。
+ * 实际权限边界：扫描/基线只读；部署执行允许包的脚本，备份/恢复和
+ * 文本词库会写盘。所有载荷入口必须检查不可变发布策略与来源，不能
+ * 信任渲染层、对话框路径或历史 state。隔离包只保留平台查看和文本词库，
+ * 不执行旧安装/卸载、深度验证或恢复，不自动清理用户目录与原始证据。
  */
 
 /**
@@ -55,6 +53,8 @@ const os = require('node:os');
 const { spawn } = require('node:child_process');
 
 const core = require('./core.cjs');
+const { getPackBlockReason, assertPackAllowed, getDeployPlanInfo, assertBackupAllowed } = require('./security-policy.cjs');
+const { assertPackSourceAllowed, missingExpectedEntries } = require('./pack-source-policy.cjs');
 trace('require(core.cjs) 完成');
 
 // 正常桌面会话保留 Chromium 硬件加速，避免每次启动都额外拉起/初始化
@@ -156,7 +156,8 @@ function decodeBuf(buf) {
 }
 
 /** 起一个子进程收 stdout/stderr，带超时与 ELECTRON_RUN_AS_NODE 清理 */
-function spawnOnce(cmd, args, opts = {}) {
+function spawnOnce(id, cmd, args, opts = {}) {
+  assertPackAllowed(id);
   return new Promise((resolve) => {
     const env = { ...process.env };
     delete env.ELECTRON_RUN_AS_NODE;
@@ -221,6 +222,7 @@ function getPwElectron() {
  * 通用启发式，per-app 适配失败时如实标注"界面就绪但抓取未适配"，不伪造成功。
  */
 async function guiSessionProbe(id) {
+  assertPackAllowed(id);
   const exe = core.findGuiExe(id);
   if (!exe) return { ok: false, label: '客户端未安装', detail: '' };
   const el = getPwElectron();
@@ -283,6 +285,7 @@ async function guiSessionProbe(id) {
  * L1 文件 → L2 配置 → L3 进程 → L4 会话，任一失败即停，报告失败层。
  */
 async function runDeepVerify(id) {
+  assertPackAllowed(id);
   const layers = [];
   const result = { id, layers, passAt: null, failAt: null, reply: null, analysis: null, checkedAt: new Date().toISOString() };
 
@@ -328,7 +331,7 @@ async function runDeepVerify(id) {
   let l3detail = rt.detail || '';
   // CLI 通道：拿到 exe 才真起一次；探测期已回退到 GUI 的不在此重复 spawn
   if (rt.ok && rt.mode === 'cli' && rt.exe && !rt.soft) {
-    const r = await spawnOnce(rt.exe, ['--version'], { timeout: 20000 });
+    const r = await spawnOnce(id, rt.exe, ['--version'], { timeout: 20000 });
     l3ok = r.code === 0;
     l3label = l3ok ? `CLI 可启动（${(r.stdout || '').trim().split('\n')[0] || 'codex'}）` : 'CLI 启动失败';
     l3detail = (r.stdout + '\n' + r.stderr).trim().slice(0, 300) || rt.detail || '';
@@ -374,7 +377,7 @@ async function runDeepVerify(id) {
     }
     // eslint-disable-next-line no-await-in-loop
     const verifyCwd = os.tmpdir();
-    const r = await spawnOnce(exe, core.buildCliVerifyArgs(verifyCwd, core.VERIFY_PROMPT), {
+    const r = await spawnOnce(id, exe, core.buildCliVerifyArgs(verifyCwd, core.VERIFY_PROMPT), {
       cwd: verifyCwd,
       stdin: 'ignore',
       timeout: 120000
@@ -472,14 +475,24 @@ function baselineFile(id) {
 }
 
 /**
- * 包目录三级解析：导入覆盖 > 外部根目录 > 内嵌包。
- * 返回 { dir, source } —— source: imported | external | embedded | none
+ * 策略先于三级解析：导入覆盖 > 外部根目录 > 内嵌包。
+ * 被隔离的历史来源不会回退到另一个来源，也不会重新成为可部署路径。
  */
 function resolvePackDir(state, def) {
+  const blockedReason = getPackBlockReason(def.id);
+  if (blockedReason) return { dir: null, source: 'quarantined', blockedReason };
+  const checked = (dir, source) => {
+    try {
+      assertPackSourceAllowed(def.id, dir);
+      return { dir, source, blockedReason: null };
+    } catch (e) {
+      return { dir: null, source: 'quarantined', blockedReason: String(e.message || e) };
+    }
+  };
   const imp = state.imported && state.imported[def.id];
   if (imp && imp.kind === 'dir' && imp.path) {
     try {
-      if (fs.statSync(imp.path).isDirectory()) return { dir: imp.path, source: 'imported' };
+      if (fs.statSync(imp.path).isDirectory()) return checked(imp.path, 'imported');
     } catch {
       /* 导入源已被移动/删除，落回下一级 */
     }
@@ -487,7 +500,7 @@ function resolvePackDir(state, def) {
   if (state.root) {
     const p = path.join(state.root, def.folder);
     try {
-      if (fs.statSync(p).isDirectory()) return { dir: p, source: 'external' };
+      if (fs.statSync(p).isDirectory()) return checked(p, 'external');
     } catch {
       /* 外部根目录下没有这个包，落回内嵌 */
     }
@@ -496,7 +509,7 @@ function resolvePackDir(state, def) {
   if (embedded) {
     const p = path.join(embedded, def.folder);
     try {
-      if (fs.statSync(p).isDirectory()) return { dir: p, source: 'embedded' };
+      if (fs.statSync(p).isDirectory()) return checked(p, 'embedded');
     } catch {
       /* 内嵌缺失（未打包的开发态可能如此） */
     }
@@ -532,6 +545,7 @@ async function scanPack(state, def) {
     note: def.note,
     path: packPath,
     source: resolved.source,
+    blockedReason: resolved.blockedReason || null,
     found: false,
     version: null,
     versionSource: null,
@@ -550,7 +564,7 @@ async function scanPack(state, def) {
   };
 
   if (!packPath) {
-    base.warnings.push('未找到包目录（外部根目录与内嵌包都没有）');
+    base.warnings.push(base.blockedReason || '未找到包目录（外部根目录与内嵌包都没有）');
     return base;
   }
 
@@ -574,9 +588,7 @@ async function scanPack(state, def) {
     base.warnings.push('目录不可读');
   }
 
-  base.missingEntries = def.expected.filter(
-    (e) => !base.entries.some((entry) => core.matchesExpected(entry, e))
-  );
+  base.missingEntries = missingExpectedEntries(packPath, def.expected);
 
   try {
     const stats = await core.walkStats(packPath);
@@ -620,8 +632,7 @@ async function scanPack(state, def) {
 
 async function buildHub() {
   const state = await loadState();
-  // 七个包互不共享可变扫描状态。并行扫描避免启动时把七段目录 I/O
-  // 串成一条长链，尤其是首次从 resources/packs 读取时收益明显。
+  // 隔离项只返回说明，不遍历载荷；其余包独立扫描。
   const packs = await Promise.all(core.PACKS.map((def) => scanPack(state, def)));
   const embeddedRoot = core.embeddedPacksRoot();
   return {
@@ -700,12 +711,19 @@ function registerIpc() {
   ipcMain.handle('dango:openRoot', async () => {
     const state = await loadState();
     if (!state.root) return { ok: false, error: '尚未选择根目录' };
+    // 历史 state 不是路径授权：openPath 指向 exe/cmd 会执行，而非浏览。
+    try {
+      if (!fs.statSync(state.root).isDirectory()) return { ok: false, error: '根目录不是文件夹，禁止打开为程序' };
+    } catch {
+      return { ok: false, error: '根目录不存在或不可读' };
+    }
     const r = await shell.openPath(state.root);
     return { ok: !r, error: r || null };
   });
 
   ipcMain.handle('dango:openPack', async (_e, id) => {
     guard(id);
+    assertPackAllowed(id);
     const state = await loadState();
     const def = core.PACKS.find((p) => p.id === id);
     const { dir } = resolvePackDir(state, def);
@@ -716,6 +734,7 @@ function registerIpc() {
 
   ipcMain.handle('dango:captureBaseline', async (_e, id) => {
     guard(id);
+    assertPackAllowed(id);
     return withBusy(async () => {
       const state = await loadState();
       const def = core.PACKS.find((p) => p.id === id);
@@ -754,6 +773,7 @@ function registerIpc() {
 
   ipcMain.handle('dango:verify', async (_e, id) => {
     guard(id);
+    assertPackAllowed(id);
     return withBusy(async () => {
       const state = await loadState();
       const def = core.PACKS.find((p) => p.id === id);
@@ -829,7 +849,7 @@ function registerIpc() {
   /* ==============================================================
      部署引擎：探测 / 图标 / 备份 / 安装 / 卸载 / 生效验证
      --------------------------------------------------------------
-     只 spawn 各包目录里已存在的脚本，不生成也不改写任何注入内容。
+     仅允许发布列表中的包；来源检查先于复制/恢复/脚本执行。
      ============================================================== */
 
   ipcMain.handle('dango:detect', async () => {
@@ -839,12 +859,7 @@ function registerIpc() {
     for (const id of core.PACK_IDS) {
       breaks[id] = core.verifyBreak(id);
       const plan = core.DEPLOY_PLANS[id] || {};
-      plans[id] = {
-        hasInstall: Boolean(plan.install),
-        hasUninstall: Boolean(plan.uninstall),
-        installFile: plan.install ? plan.install.file : null,
-        uninstallFile: plan.uninstall ? plan.uninstall.file : null
-      };
+      plans[id] = getDeployPlanInfo(id, plan);
     }
     return { platforms, breaks, plans };
   });
@@ -885,6 +900,7 @@ function registerIpc() {
 
   ipcMain.handle('dango:backup', async (_e, id) => {
     guard(id);
+    assertPackAllowed(id);
     return withBusy(async () => {
       const plan = core.DEPLOY_PLANS[id] || {};
       const dirs = (plan.backupDirs || []).filter((d) => {
@@ -895,6 +911,7 @@ function registerIpc() {
         }
       });
       if (!dirs.length) throw new Error('没有可备份的目录');
+      for (const d of dirs) assertPackSourceAllowed(id, d);
       const name = `${id}-${stamp()}`;
       const dest = path.join(BACKUP_DIR, name);
       await fsp.mkdir(dest, { recursive: true });
@@ -911,9 +928,11 @@ function registerIpc() {
 
   ipcMain.handle('dango:restore', async (_e, id, name) => {
     guard(id);
-    if (!/^[a-z-]+-\d{8}-\d{6}$/.test(String(name || ''))) throw new Error('备份名不合法');
+    assertPackAllowed(id);
+    assertBackupAllowed(id, name);
     return withBusy(async () => {
       const src = path.join(BACKUP_DIR, String(name));
+      assertPackSourceAllowed(id, src);
       try {
         await fsp.stat(src);
       } catch {
@@ -938,17 +957,18 @@ function registerIpc() {
 
   ipcMain.handle('dango:deploy', async (_e, id, action) => {
     guard(id);
+    assertPackAllowed(id);
     if (action !== 'install' && action !== 'uninstall') throw new Error('未知动作');
     return withBusy(async () => {
       const state = await loadState();
       const def = core.PACKS.find((p) => p.id === id);
-      const { dir: packPath } = resolvePackDir(state, def);
-      if (!packPath) throw new Error('未找到包目录（外部根目录与内嵌包都没有）');
+      const { dir: packPath, blockedReason } = resolvePackDir(state, def);
+      if (!packPath) throw new Error(blockedReason || '未找到包目录（外部根目录与内嵌包都没有）');
       const plan = core.DEPLOY_PLANS[id] || {};
       const script = action === 'install' ? plan.install : plan.uninstall;
       if (!script) throw new Error(`${def.name} 没有提供${action === 'install' ? '安装' : '卸载'}脚本`);
 
-      const sp = core.buildSpawn(script, packPath);
+      const sp = core.buildSpawn(script, packPath, id);
       if (!sp) throw new Error(`包内找不到脚本：${script.file}`);
 
       const label = action === 'install' ? '安装' : '卸载';
@@ -1020,6 +1040,7 @@ function registerIpc() {
 
   ipcMain.handle('dango:verifyDeep', async (_e, id) => {
     guard(id);
+    assertPackAllowed(id);
     const chan = core.L4_CHANNELS[id] || { mode: 'gui' };
     // GUI 拉起会短暂把客户端顶到前台，先明确提示
     emitLog({ id, action: 'install', kind: 'sys', line: `开始深度验证：${id}（L1 文件 → L2 配置 → L3 进程 → L4 会话）` });
@@ -1071,19 +1092,26 @@ function registerIpc() {
   ipcMain.handle('dango:analyzeImport', async (_e, inputPath) => {
     if (typeof inputPath !== 'string' || !inputPath.trim()) throw new Error('路径为空');
     const det = core.detectPackTarget(inputPath.trim());
+    if (det.platform) det.blockedReason = getPackBlockReason(det.platform);
     if (det.kind === 'single' && det.inputKind === 'dir' && det.platform) {
       det.analysis = core.analyzeImportedDir(det.path, det.platform);
+      det.blockedReason = det.blockedReason || det.analysis?.blockedReason || null;
     }
     if (det.kind === 'multi-root' && Array.isArray(det.platforms)) {
-      det.platforms = det.platforms.map((p) => ({ ...p, analysis: core.analyzeImportedDir(p.path, p.platform) }));
+      det.platforms = det.platforms.map((p) => {
+        const analysis = core.analyzeImportedDir(p.path, p.platform);
+        return { ...p, analysis, blockedReason: getPackBlockReason(p.platform) || analysis?.blockedReason || null };
+      });
     }
     return det;
   });
 
   ipcMain.handle('dango:importPackDir', async (_e, inputPath, platformId) => {
     guard(platformId);
+    assertPackAllowed(platformId);
     if (typeof inputPath !== 'string' || !inputPath.trim()) throw new Error('路径为空');
     const dir = inputPath.trim();
+    assertPackSourceAllowed(platformId, dir);
     try {
       if (!fs.statSync(dir).isDirectory()) throw new Error('x');
     } catch {
@@ -1099,8 +1127,11 @@ function registerIpc() {
 
   ipcMain.handle('dango:importSingleFile', async (_e, inputPath, platformId) => {
     guard(platformId);
+    // 包导入入口不接受隔离载荷；普通 Codex 文本管理走独立 library* API。
+    assertPackAllowed(platformId);
     if (typeof inputPath !== 'string' || !inputPath.trim()) throw new Error('路径为空');
     const file = inputPath.trim();
+    assertPackSourceAllowed(platformId, file);
     const ext = path.extname(file).toLowerCase();
     if (!core.TEXT_EXTS.has(ext)) {
       throw new Error(`不支持的文件类型 ${ext || '(无扩展名)'}，请选文本规则文件（.md/.mdc/.txt 等）`);
@@ -1156,7 +1187,10 @@ function registerIpc() {
 
   ipcMain.handle('dango:listImports', async () => {
     const state = await loadState();
-    return state.imported || {};
+    // 保留落盘历史供查看/移除，不把它当成当前允许部署的声明。
+    return Object.fromEntries(Object.entries(state.imported || {}).map(([id, item]) => [id, {
+      ...item, blockedReason: getPackBlockReason(id)
+    }]));
   });
 
   // ---------- 词库 v2（智汇AI 提示词库） ----------

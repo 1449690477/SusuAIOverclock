@@ -6,6 +6,7 @@ dist-electron/
 release/
 release-final/
 release-next/
+.security-quarantine-*/
 
 # 词库快照（24MB，构建产物，由 npm run refresh:library 重新生成）
 build/library/
