@@ -17,13 +17,19 @@ const out = process.env.GUI_RUN_DIR;
 const mode = process.env.GUI_MODE;
 assert(process.platform === 'linux' && root.startsWith('/home/builder/') && out?.startsWith(root + `/logs/gui-electron${runtime}-`));
 assert(process.env.GUI_RUNTIME_DIR === staged);
-const allowed = ['cursor', 'dsh', 'opencode', 'workbuddy', 'workbuddy-ai'];
+// Authoritative lists mirror electron/security-policy.cjs. tests/security-quarantine.test.cjs
+// asserts these literals still equal the policy, so drift fails the fast suite.
+const allowed = ['cursor', 'dsh', 'claude', 'opencode', 'workbuddy', 'workbuddy-ai'];
+// No longer hard-blocked in v1.5.6: these are consent-required. Without a
+// registered consent they must behave exactly like the old hard quarantine.
 const blocked = ['codex', 'codex-panghu', 'anti-gravity'];
 const ids = [...allowed, ...blocked].sort();
 const names = {
-  codex: 'Codex 冷咖啡石井 · 旧载荷已隔离', 'codex-panghu': 'Codex 胖虎 · 旧载荷已隔离',
-  cursor: 'Cursor 破甲包', dsh: 'DSH 破甲懒人包', opencode: 'OpenCode 破甲包',
-  workbuddy: 'WorkBuddy 破甲包', 'workbuddy-ai': 'WorkBuddy AI 国际版破甲包', 'anti-gravity': '反重力 · 旧载荷已隔离'
+  codex: 'Codex 冷咖啡石井 · 旧载荷（已隔离）', 'codex-panghu': 'Codex 胖虎 · 旧载荷（已隔离）',
+  cursor: 'Cursor 破甲包', dsh: 'DSH 破甲懒人包', claude: 'Claude Code 破甲包',
+  opencode: 'OpenCode 破甲包',
+  workbuddy: 'WorkBuddy 破甲包', 'workbuddy-ai': 'WorkBuddy AI 国际版破甲包',
+  'anti-gravity': '反重力 · 旧载荷（已隔离）'
 };
 const nested = { cursor: ['materials/rules', 'materials/tools/cursor_tamper_proxy.py'],
   'workbuddy-ai': ['materials/IDENTITY.md', 'materials/MEMORY.md', 'materials/SOUL-snippet.txt'] };
@@ -149,13 +155,13 @@ async function run() {
   report.initialUiReadyMs = Date.now() - readyStarted;
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.getByTestId('pack-card-cursor').waitFor({ timeout: 90000 });
-  await page.waitForFunction(() => document.querySelectorAll('[data-testid^="pack-card-"]').length === 8);
+  await page.waitForFunction(() => document.querySelectorAll('[data-testid^="pack-card-"]').length === 9);
   report.pageURL = page.url();
   check('packaged renderer URL', /app\.asar\/dist-electron\/index\.html/.test(page.url()));
   const hub = await page.evaluate(() => window.dango.load());
   report.hub = hub;
   check('core app version', hub.appVersion === expectedAppVersion, hub.appVersion);
-  check('eight expected resource IDs', JSON.stringify(hub.packs.map(p => p.id).sort()) === JSON.stringify(ids), hub.packs.map(p => p.id));
+  check('nine expected resource IDs', JSON.stringify(hub.packs.map(p => p.id).sort()) === JSON.stringify(ids), hub.packs.map(p => p.id));
   check('no migrated root/activity', hub.root === null && hub.activity.length === 0 && hub.lastScanAt === null);
   check('fresh userDir', nativePath(hub.userDir).startsWith(out + '/'), { appPath: hub.userDir, nativePath: nativePath(hub.userDir) });
   check('embedded resources available', hub.hasEmbedded && /resources[/\\]packs$/.test(hub.embeddedRoot), hub.embeddedRoot);
@@ -163,7 +169,7 @@ async function run() {
   report.detect = detect;
   const packRoot = path.join(staged, 'resources/packs');
   const resourceNames = fs.readdirSync(packRoot, { withFileTypes: true }).filter(e => e.isDirectory()).map(e => e.name).sort();
-  check('resources contain exactly five allowed pack directories', JSON.stringify(resourceNames) === JSON.stringify([...allowed].sort()), resourceNames);
+  check('resources contain exactly six allowed pack directories', JSON.stringify(resourceNames) === JSON.stringify([...allowed].sort()), resourceNames);
   for (const id of blocked) check(`${id}: retired pack absent from real resources`, !fs.existsSync(path.join(packRoot, id)));
   for (const p of hub.packs) {
     check(`${p.id}: exact IPC and UI card name`, p.name === names[p.id] && (await page.getByTestId(`pack-card-${p.id}`).locator('.pack-name').innerText()) === names[p.id]);
@@ -195,10 +201,15 @@ async function run() {
   for (const id of blocked) {
     const p = hub.packs.find(p => p.id === id);
     check(`${id}: quarantine resource state`, !p.found && p.source === 'quarantined' && p.path === null && p.fileCount === 0 && Boolean(p.blockedReason));
+    // v1.5.6: consent-required, not hard-quarantined. Fresh state has no consent,
+    // so the badge, the consent box and the block notice must all still say so.
+    check(`${id}: reported as consent-required and not yet consented`, p.consentRequired === true && p.consented === false, { consentRequired: p.consentRequired, consented: p.consented });
     check(`${id}: quarantine labels`, (await page.getByTestId(`pack-card-${id}`).innerText()).includes('已隔离 · 只读') && await page.getByTestId(`quarantine-${id}`).count() === 1);
+    check(`${id}: consent box with the exact persisted label`, await page.getByTestId(`consent-${id}`).count() === 1 && (await page.getByTestId(`consent-${id}`).innerText()).includes('该载荷已隔离 · 需勾选知情同意') && (await page.getByTestId(`consent-${id}`).innerText()).includes('我知晓 同意'));
+    check(`${id}: consent checkbox present and unchecked`, await page.getByTestId(`consent-check-${id}`).count() === 1 && !(await page.getByTestId(`consent-check-${id}`).isChecked()));
     for (const prefix of ['install', 'uninstall', 'deep-verify-btn']) check(`${id}: disabled ${prefix}`, await page.getByTestId(`${prefix}-${id}`).isDisabled());
-    report.buttonStates[id] = { installEnabled: false, uninstallEnabled: false, monitorEnabled: false, blockedReason: p.blockedReason };
-    check(`${id}: disabled main-process plan`, !detect.plans[id].hasInstall && !detect.plans[id].hasUninstall && Boolean(detect.plans[id].blockedReason));
+    report.buttonStates[id] = { installEnabled: false, uninstallEnabled: false, monitorEnabled: false, blockedReason: p.blockedReason, consentRequired: true, consented: false };
+    check(`${id}: disabled main-process plan`, !detect.plans[id].hasInstall && !detect.plans[id].hasUninstall && Boolean(detect.plans[id].blockedReason) && detect.plans[id].consentRequired === true && detect.plans[id].consented === false);
   }
   await screenshot('01-toolbox-top');
   await page.getByTestId('pack-card-anti-gravity').scrollIntoViewIfNeeded();
@@ -209,8 +220,8 @@ async function run() {
   await screenshot('03-toolbox-search-codex');
   await page.getByTestId('search-input').fill('');
   await page.getByTestId('filter-found').click();
-  await page.waitForFunction(() => document.querySelectorAll('[data-testid^="pack-card-"]').length === 5);
-  check('toolbox found filter shows five', await page.locator('[data-testid^="pack-card-"]').count() === 5);
+  await page.waitForFunction(() => document.querySelectorAll('[data-testid^="pack-card-"]').length === 6);
+  check('toolbox found filter shows six', await page.locator('[data-testid^="pack-card-"]').count() === 6);
   await screenshot('04-toolbox-found');
   await page.getByTestId('filter-all').click();
   for (const id of Object.keys(nested)) {
@@ -228,7 +239,9 @@ async function run() {
   for (const id of blocked) {
     await page.getByTestId(`pack-card-${id}`).locator('.pack-name').click();
     await page.getByTestId('pack-detail-modal').waitFor();
-    check(`${id}: detail quarantine warning`, (await page.getByTestId('pack-detail-modal').innerText()).includes('已隔离 · 载荷操作禁用'));
+    const detailText = await page.getByTestId('pack-detail-modal').innerText();
+    check(`${id}: detail quarantine warning`, detailText.includes('已隔离 · 载荷操作禁用'));
+    check(`${id}: detail consent box mirrors the card`, detailText.includes('该载荷已隔离 · 需勾选知情同意') && detailText.includes('我知晓 同意') && await page.getByTestId(`detail-quarantine-${id}`).count() === 1 && !(await page.getByTestId(`detail-consent-check-${id}`).isChecked()));
     for (const tid of ['detail-install', 'detail-uninstall', 'detail-deep-verify', 'detail-capture', 'detail-verify']) check(`${id}: disabled ${tid}`, await page.getByTestId(tid).isDisabled());
     await screenshot('05-detail-' + id);
     await page.getByTestId('detail-deep-verify').scrollIntoViewIfNeeded();
@@ -307,19 +320,62 @@ async function run() {
   await page.getByTestId('nav-settings').click();
   await page.getByTestId('settings-reduced-motion').waitFor();
   const settings = await page.locator('main').innerText();
-  check('settings shows isolated userData and quarantine warning', settings.includes(hub.userDir) && settings.includes('旧载荷已隔离'));
+  check('settings shows isolated userData and consent policy', settings.includes(hub.userDir) && settings.includes('我知晓 同意') && settings.includes('claude'));
   await page.getByTestId('settings-reduced-motion').click();
   check('settings reduced-motion toggles', (await page.getByTestId('settings-reduced-motion').innerText()).includes('已开启'));
   await screenshot('10-settings');
   await page.getByTestId('nav-activity').click();
   await screenshot('11-activity');
   await page.getByTestId('nav-toolbox').click();
-  await page.waitForFunction(() => document.querySelectorAll('[data-testid^="pack-card-"]').length === 8);
-  check('return to toolbox retains eight cards', await page.locator('[data-testid^="pack-card-"]').count() === 8);
+  await page.waitForFunction(() => document.querySelectorAll('[data-testid^="pack-card-"]').length === 9);
+  check('return to toolbox retains nine cards', await page.locator('[data-testid^="pack-card-"]').count() === 9);
   check('no target writes across whole UI test', JSON.stringify(targetSnapshot()) === JSON.stringify(baselineTargets));
   check('no action state after full UI navigation', ['backups', 'imported-packs', 'baselines', 'library-injections.json', 'state.json'].every(n => !fs.existsSync(path.join(userDirNative, n))));
   check('no renderer uncaught errors/crashes', report.rendererErrors.length === 0, report.rendererErrors);
   check('no renderer console errors', report.console.every(m => m.type !== 'error'), report.console);
+
+  // ---- v1.5.6: Claude card + consent round trip -------------------------
+  // This is the only section that intentionally writes, and it writes only to
+  // the isolated userDir's state.json. No install/uninstall/deep-verify runs:
+  // after a successful consent grant we immediately revoke and re-assert the
+  // fail-closed state, then confirm the file holds an empty consent register.
+  const claude = hub.packs.find(p => p.id === 'claude');
+  const claudeDetect = detect.plans.claude;
+  check('claude: embedded release pack, deployable', Boolean(claude) && claude.found && claude.source === 'embedded' && !claude.blockedReason && claude.fileCount > 0, { name: claude?.name, fileCount: claude?.fileCount, source: claude?.source });
+  check('claude: real embedded pack version', claude.version === '2.3.6', claude.version);
+  check('claude: not a consent pack', claude.consentRequired !== true);
+  check('claude: no consent affordance rendered', await page.getByTestId('consent-claude').count() === 0 && await page.getByTestId('quarantine-claude').count() === 0);
+  check('claude: exact embedded resource path', nativePath(claude.path) === path.join(packRoot, 'claude'));
+  check('claude: direct install-claude.py plan', claudeDetect.hasInstall && claudeDetect.hasUninstall && claudeDetect.installFile === 'install-claude.py' && claudeDetect.uninstallFile === 'install-claude.py');
+  check('claude: install enabled, not clicked', await page.getByTestId('install-claude').isEnabled() && await page.getByTestId('deep-verify-btn-claude').isEnabled());
+  await screenshot('12-claude-card');
+
+  const consentProbe = blocked[0];
+  report.consentRoundTrip = [];
+  for (const granted of [true, false]) {
+    const nextHub = await page.evaluate(({ id, granted }) => window.dango.setConsent(id, granted), { id: consentProbe, granted });
+    const nextDetect = await page.evaluate(() => window.dango.detect());
+    const p = nextHub.packs.find(p => p.id === consentProbe);
+    const plan = nextDetect.plans[consentProbe];
+    report.consentRoundTrip.push({ granted, consented: p.consented, blocked: Boolean(p.blockedReason), hasInstall: plan.hasInstall, installFile: plan.installFile, consents: nextHub.consents });
+    if (granted) {
+      check(`${consentProbe}: consent unlocks hub state`, p.consentRequired === true && p.consented === true && !p.blockedReason && (nextHub.consents || []).includes(consentProbe));
+      check(`${consentProbe}: consent unlocks the real main-process plan`, plan.hasInstall && plan.hasUninstall && plan.consented === true && !plan.blockedReason, plan);
+      check(`${consentProbe}: legacy script retained after unlock`, plan.installFile === 'install-replica.ps1', plan.installFile);
+      check(`${consentProbe}: badge switches to unlocked`, (await page.getByTestId(`pack-card-${consentProbe}`).innerText()).includes('隔离已解锁'));
+      check(`${consentProbe}: block notice disappears`, await page.getByTestId(`quarantine-${consentProbe}`).count() === 0 && await page.getByTestId(`consent-check-${consentProbe}`).isChecked());
+    } else {
+      check(`${consentProbe}: revoke restores fail-closed`, Boolean(p.blockedReason) && p.consented === false && !plan.hasInstall && !plan.hasUninstall && Boolean(plan.blockedReason));
+      check(`${consentProbe}: revoke restores the badge and block notice`, (await page.getByTestId(`pack-card-${consentProbe}`).innerText()).includes('已隔离 · 只读') && await page.getByTestId(`quarantine-${consentProbe}`).count() === 1 && !(await page.getByTestId(`consent-check-${consentProbe}`).isChecked()));
+    }
+  }
+  check('consent: only the quarantined id can be granted', Boolean((await page.evaluate(() => window.dango.setConsent('claude', true).then(() => null, e => String(e.message || e)))).includes('该包不属于隔离载荷')));
+  const stateFile = path.join(userDirNative, 'state.json');
+  const persisted = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+  check('consent: persisted register ends empty and names no payload', JSON.stringify(persisted.consents || {}) === '{}' && !JSON.stringify(persisted.consents || {}).includes('slo-runtime-hook'));
+  check('consent: no target writes from the round trip', JSON.stringify(targetSnapshot()) === JSON.stringify(baselineTargets));
+  check('consent: no install/backup side effects', ['backups', 'imported-packs', 'baselines', 'library-injections.json'].every(n => !fs.existsSync(path.join(userDirNative, n))));
+  check('no renderer uncaught errors/crashes after consent flow', report.rendererErrors.length === 0, report.rendererErrors);
   report.status = 'PASS';
 }
 

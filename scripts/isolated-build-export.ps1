@@ -1,6 +1,6 @@
 param(
   [string]$Project = 'C:\Users\Administrator\Desktop\workbuddy-shiyi-pack\dango-desk',
-  [string]$Output = 'C:\Users\Administrator\AppData\Local\Temp\opencode\susu155-source.zip'
+  [string]$Output = 'C:\Users\Administrator\AppData\Local\Temp\opencode\susu156-source.zip'
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -30,7 +30,7 @@ function Visit([string]$relative) {
     $files.Add($relative)
   }
 }
-foreach ($name in @('package.json','package-lock.json','vite.config.mjs','tsconfig.json','LICENSE','electron','src','build\icon.png','build\portable-fast.nsi','build\library\library.json','scripts\pack-portable.cjs','scripts\before-build.cjs','scripts\preflight-security.cjs','scripts\apply-portable-patch.cjs','tests\security-preflight.test.cjs','tests\security-quarantine.test.cjs','packed-packs\NOTICE.txt','packed-packs\cursor','packed-packs\dsh','packed-packs\opencode','packed-packs\workbuddy','packed-packs\workbuddy-ai')) { Visit $name }
+foreach ($name in @('package.json','package-lock.json','vite.config.mjs','tsconfig.json','LICENSE','electron','src','build\icon.png','build\portable-fast.nsi','build\library\library.json','scripts\pack-portable.cjs','scripts\before-build.cjs','scripts\preflight-security.cjs','scripts\apply-portable-patch.cjs','tests\security-preflight.test.cjs','tests\security-quarantine.test.cjs','packed-packs\NOTICE.txt','packed-packs\cursor','packed-packs\dsh','packed-packs\claude','packed-packs\opencode','packed-packs\workbuddy','packed-packs\workbuddy-ai')) { Visit $name }
 foreach ($file in [IO.Directory]::EnumerateFiles([IO.Path]::Combine($Project,'scripts'),'isolated-build*')) { Visit ($file.Substring($Project.Length + 1)) }
 foreach ($file in [IO.Directory]::EnumerateFiles([IO.Path]::Combine($Project,'scripts'),'isolated-gui-smoke.*')) { Visit ($file.Substring($Project.Length + 1)) }
 $manifest = [Collections.Generic.List[object]]::new()

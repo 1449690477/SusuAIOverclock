@@ -369,6 +369,52 @@ test('real filesystem: embedded Claude pack satisfies expected entries and sourc
   assert.ok(packText.includes('<!-- CHA-CLAUDE-POJIA:END -->'));
 });
 
+test('the isolated-build source export carries exactly the allowlisted packs', () => {
+  // v1.5.6 regression: the export list was hard-coded and silently omitted the
+  // newly added pack, which would have shipped an artifact missing one tree and
+  // then tripped the six-dir assertion in isolated-build-verify.cjs.
+  const src = read('scripts/isolated-build-export.ps1');
+  const listed = [...src.matchAll(/'(packed-packs\\[A-Za-z0-9_-]+)'/g)].map(m => m[1].slice('packed-packs\\'.length));
+  assert.deepEqual(listed.slice().sort(), [...policy.RELEASE_PACK_IDS].sort());
+  for (const id of Object.keys(policy.QUARANTINED_PACKS)) {
+    assert.ok(!listed.includes(id), `${id} 是隔离载荷，不得进入构建源包`);
+    assert.match(src, new RegExp(`'${id.replace(/[-]/g, '\\-')}'`), `${id} 必须保留在 omit 名单里`);
+  }
+  assert.match(src, /packed-packs\\NOTICE\.txt/, 'NOTICE.txt 必须随包导出');
+  assert.match(src, /projectVersion='1\.5\.6'/);
+  assert.match(src, /susu156-source\.zip/, '默认输出名必须跟随当前版本');
+});
+
+test('the isolated GUI smoke pack lists and names track the real pack table', () => {
+  // Same drift class as the export list: a hard-coded mirror is fine only if
+  // something fails the moment it diverges from the authoritative tables.
+  const src = read('scripts/isolated-gui-smoke.cjs');
+  const listOf = (name) => {
+    const m = new RegExp(`const ${name} = (\\[[^\\]]*\\])`).exec(src);
+    assert.ok(m, `isolated-gui-smoke.cjs 缺少 const ${name}`);
+    return [...m[1].matchAll(/'([^']+)'/g)].map(x => x[1]);
+  };
+  const allowed = listOf('allowed');
+  const blocked = listOf('blocked');
+  assert.deepEqual(allowed.slice().sort(), [...policy.RELEASE_PACK_IDS].sort());
+  assert.deepEqual(blocked.slice().sort(), Object.keys(policy.QUARANTINED_PACKS).sort());
+  const namesBlock = between(src, 'const names = {', '\n};');
+  const declared = new Map([...namesBlock.matchAll(/'?([A-Za-z0-9_-]+)'?:\s*'([^']*)'/g)].map(m => [m[1], m[2]]));
+  const core = require('../electron/core.cjs');
+  const expectedNames = new Map(core.PACKS.map(p => [p.id, p.name]));
+  assert.deepEqual([...declared.keys()].sort(), core.PACK_IDS.slice().sort(), 'names 必须恰好覆盖全部受管包');
+  for (const [id, name] of expectedNames) assert.equal(declared.get(id), name, `${id} 显示名与 core.PACKS 不一致`);
+  // Card / resource counts are hard-coded; they must follow the two lists.
+  const total = allowed.length + blocked.length;
+  const words = { 6: 'six', 7: 'seven', 8: 'eight', 9: 'nine', 10: 'ten' };
+  assert.ok(words[total], `需要为总数 ${total} 补充英文数字`);
+  assert.match(src, new RegExp(`pack-card-\\"\\]'\\)\\.length === ${total}`, 'g'), `卡片总数断言必须等于 ${total}`);
+  assert.ok(src.includes(`retains ${words[total]} cards`), `返回工具箱卡片数断言必须等于 ${total}`);
+  assert.ok(src.includes(`exactly ${words[allowed.length] || allowed.length} allowed pack directories`), `资源目录数断言必须等于 ${allowed.length}`);
+  assert.ok(src.includes(`filter shows ${words[allowed.length] || allowed.length}`), `found 过滤器数量断言必须等于 ${allowed.length}`);
+  assert.ok(src.includes(`${words[total]} expected resource IDs`), `资源 ID 数量断言必须等于 ${total}`);
+});
+
 // Explicit opt-in: checks the actual packed trees, not installed user profiles.
 // No fixtures are created, no payload imports/eval/spawn, no dependencies.
 const realTreeOptions = { skip: process.env.DANGO_TEST_REAL_PACKS !== '1' && 'set DANGO_TEST_REAL_PACKS=1 for read-only real-tree checks' };
