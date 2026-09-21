@@ -2,14 +2,30 @@
 """Guest-only evidence/archive delivery, after actual artifact verification/AV."""
 import hashlib
 import json
+import os
 import pathlib
 import re
 import zipfile
 
-BASE = pathlib.Path('/home/builder/susu155-final44')
-BUILD_ID = 'susu155-electron44.4.3-final-20260920'
+# Evidence root and build identity must follow the tree being packaged. The
+# harness defaults keep the original 1.5.5 values, but a newer version must be
+# able to point at its own base without editing this file -- hardcoding it made
+# the first 1.5.6 package attempt read the previous version's reports.
+BASE = pathlib.Path(os.environ.get('ISOLATED_BUILD_BASE', '/home/builder/susu155-final44'))
+BUILD_ID = os.environ.get('ISOLATED_BUILD_ID', 'susu155-electron44.4.3-final-20260920')
 PROJECT = BASE / 'project'
 REPORTS = BASE / 'reports'
+# Pinned date so repeated packaging of identical inputs is byte-reproducible.
+FIXED_DATE = (1980, 1, 1, 0, 0, 0)
+
+
+def zinfo(name, *, compress):
+    info = zipfile.ZipInfo(name, date_time=FIXED_DATE)
+    info.compress_type = zipfile.ZIP_DEFLATED if compress else zipfile.ZIP_STORED
+    if compress:
+        info._compresslevel = 9
+    info.external_attr = 0o644 << 16
+    return info
 
 
 def digest(p):
@@ -42,6 +58,22 @@ for key in ['tests', 'pass', 'fail', 'skipped']:
     assert values, f'Missing TAP count: {key}'
     counts[key] = int(values[-1])
 assert counts['fail'] == 0
+# The GUI verdict is only as good as the evidence actually produced in this guest.
+# It is read from the finalize step's SUMMARY.json rather than asserted by hand; a
+# missing or failed GUI run stays 'not verified' instead of being upgraded.
+gui = None
+for candidate in sorted((REPORTS).glob('gui-verification-*/SUMMARY.json')):
+    data = json.loads(candidate.read_text())
+    if data.get('portableArtifactSHA256') == result['sha256']:
+        gui = {'report': str(candidate), 'result': data.get('result'),
+               'windowsNativeGuiTested': any(run.get('mode') == 'wine' and run.get('status') == 'PASS' for run in data.get('runs', [])),
+               'linuxGuiTested': data.get('result') == 'PASS_LINUX_ASAR_GUI_ONLY',
+               'checksPassed': data.get('checksPassed'), 'screenshots': data.get('screenshotsSuccessfulRun'),
+               'quarantineRejected': data.get('quarantineRejected'),
+               'buttonStates': data.get('buttonStates'), 'limitations': data.get('limitations')}
+if gui is None:
+    gui = {'report': None, 'result': 'not-run-for-this-artifact', 'windowsNativeGuiTested': False,
+           'linuxGuiTested': False, 'notes': 'No GUI SUMMARY.json matching this artifact hash in this guest.'}
 # No "clean" claim if AV signatures/scanning failed or findings need review.
 delivery = {**result, 'antivirus': av, 'hostRawExeTransferred': False,
             'buildIdentity': BUILD_ID, 'sourceProof': source_proof,
@@ -51,7 +83,10 @@ delivery = {**result, 'antivirus': av, 'hostRawExeTransferred': False,
                              'built; antivirus unavailable/incomplete' if av.get('scanExit') != 0 else 'built; antivirus scan completed without detections',
             'isolation': 'New Ubuntu guest, no shared folders/clipboard; infected host/hypervisor remains a residual risk',
             'tests': counts, 'successfulBuildLog': str(successful[-1]),
-            'windowsGuiTested': False, 'guiVerification': {'status': 'pending-for-new-Electron44-build', 'inheritedElectron33GuiResultsApplied': False}}
+            'windowsGuiTested': bool(gui.get('windowsNativeGuiTested')),
+            'guiVerification': gui,
+            'sourceTransferIntegrity': json.loads((REPORTS / 'source-transfer-integrity.json').read_text())
+            if (REPORTS / 'source-transfer-integrity.json').exists() else None}
 (REPORTS / 'delivery-report.json').write_text(json.dumps(delivery, ensure_ascii=False, indent=2) + '\n')
 # Hash the actual reviewed source snapshot as used in the guest; keep the
 # original transfer manifest and explicitly expose later reviewed script edits.
@@ -65,7 +100,7 @@ for r in manifest['files']:
 (REPORTS / 'reviewed-source-updates.json').write_text(json.dumps(source_changes, indent=2) + '\n')
 out = BASE / 'deliverables'
 out.mkdir(exist_ok=True)
-archive = out / 'SusuAIOverclock-1.5.6-portable-electron44.4.3-isolated.zip'
+archive = out / 'SusuAIOverclock-1.5.7-portable-electron44.4.3-isolated.zip'
 if archive.exists():
     raise RuntimeError('Refusing to overwrite existing delivery archive')
 files = {exe.name: exe}
@@ -90,10 +125,15 @@ files['reproduce/package.json'] = PROJECT / 'package.json'
 files['reproduce/package-lock.json'] = PROJECT / 'package-lock.json'
 files['reproduce/SOURCE-MANIFEST.json'] = PROJECT / 'SOURCE-MANIFEST.json'
 checksums = ''.join(f'{digest(p)}  {name}\n' for name, p in sorted(files.items()))
-with zipfile.ZipFile(archive, 'x', compression=zipfile.ZIP_DEFLATED, compresslevel=9) as z:
+# The portable exe is already an LZMA-compressed NSIS archive: re-deflating it
+# costs minutes and saves roughly nothing, so store it verbatim. Text evidence
+# still compresses. The fixed date keeps identical inputs byte-identical.
+with zipfile.ZipFile(archive, 'x') as z:
     for name, p in sorted(files.items()):
-        z.write(p, name)
-    z.writestr('SHA256SUMS.txt', checksums)
+        # `name` is the archive member name; the exe sits at the archive root
+        # under its bare file name.
+        z.writestr(zinfo(name, compress=(name != exe.name)), p.read_bytes())
+    z.writestr(zinfo('SHA256SUMS.txt', compress=True), checksums)
 with zipfile.ZipFile(archive) as z:
     assert z.testzip() is None
     h = hashlib.sha256()

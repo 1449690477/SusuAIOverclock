@@ -55,10 +55,10 @@ function main() {
   }
 
   const template = fs.readFileSync(SRC, 'utf8');
-  // The application version comes from package.json (1.5.6 on this line). A
-  // runtime-specific key prevents a prior Electron33 cache from silently
-  // defeating this EOL update. Only the launcher cache identity changes — never
-  // official Electron bytes or any packaged content.
+  // The application version comes from package.json; ${VERSION} is substituted
+  // by NSIS at compile time. A runtime-specific key prevents a prior Electron33
+  // cache from silently defeating this EOL update. Only the launcher cache
+  // identity changes — never official Electron bytes or any packaged content.
   const oldCacheKey = 'StrCpy $cacheDir "$cacheParent\\${VERSION}"';
   const newCacheKey = 'StrCpy $cacheDir "$cacheParent\\${VERSION}-electron44.4.3"';
   if (template.split(oldCacheKey).length !== 2) throw new Error('[patch] Unrecognized portable cache arm; review template before packaging');

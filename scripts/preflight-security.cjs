@@ -30,6 +30,11 @@ const crypto = require('node:crypto');
 const ROOT = path.resolve(__dirname, '..');
 const RELEASE_PACK_IDS = Object.freeze(['cursor', 'dsh', 'claude', 'opencode', 'workbuddy', 'workbuddy-ai']);
 const QUARANTINED_PACK_IDS = Object.freeze(['codex', 'codex-panghu', 'anti-gravity']);
+// Distribution is a separate axis from the deploy allowlist. The quarantined
+// three ship inside the artifact so that a registered consent has an actual
+// payload to install; they stay out of RELEASE_PACK_IDS and remain blocked by
+// the shared policy until the user ticks the consent box.
+const DISTRIBUTED_PACK_IDS = Object.freeze([...RELEASE_PACK_IDS, ...QUARANTINED_PACK_IDS]);
 const BINARY_EXTENSIONS = Object.freeze(['.exe', '.dll', '.pyd', '.node', '.scr', '.com', '.dat']);
 const TEXT_SHA256 = 'dd25f3ed5d8024e7712dedb739ba9601a22fa1c088db9fbb10e5e47faa4c9932';
 const TEXT_OFFSET = 0x1000;
@@ -47,9 +52,21 @@ const PACK_EXCLUSIONS = Object.freeze([
   '!**/_cli-layer-state.json',
   '!**/_inject-layer-state.json',
   '!**/*.pyc',
+  // Declared, not discovered. builder-util's copyDir (the Go `app-builder copy-dir`
+  // primitive electron-builder calls for extraResources) unconditionally skips
+  // `.gitkeep`. Minimal reproduction in the Ubuntu guest: a fixture holding
+  // `.gitkeep`, `.gitignore`, `.github/w.yml`, `.travis.yml`, `.keep` and a
+  // zero-byte file comes out with everything except `.gitkeep`. It is not the
+  // `excludedNames` list (`fileMatcher.js`), because `.gitignore`/`.github`/
+  // `.travis.yml` are on that list too and they survive; and it is not an
+  // empty-file rule, because zero-byte files survive. Without this line the
+  // declared filter and the artifact disagree on 139 placeholders, which is what
+  // the guest parity assertion caught on the first 1.5.7 build. A `.gitkeep` has
+  // no runtime meaning in the shipped product, so the filter now says so.
+  '!**/.gitkeep',
 ]);
 const RELEASE_RESOURCE_FILTER = Object.freeze([
-  ...RELEASE_PACK_IDS.map(id => `${id}/**`), 'NOTICE.txt', ...PACK_EXCLUSIONS,
+  ...DISTRIBUTED_PACK_IDS.map(id => `${id}/**`), 'NOTICE.txt', ...PACK_EXCLUSIONS,
 ]);
 const CLEAN_BUILD_GUIDANCE = 'Do not build in the known-infected incident host OS. Use an independently trusted build host or a new clean guest with no shared folders/clipboard (user-approved isolation boundary), reviewed source, freshly installed lockfile dependencies and independently verified Node/Electron/NSIS/7zip distributions. Host malware can still compromise the hypervisor/transfer: this is not equivalent to separate trusted hardware. Do not transfer old executable tools, node_modules, caches, releases or quarantined packs. No bypass flag exists; an IOC-negative scan is not permission to build in the infected host OS.';
 const LIMITATION = 'Only the listed known IOCs are checked; this is not an antivirus verdict, signature verification, or a clean-host attestation. Archives are not unpacked and sampled files are never executed.';
@@ -263,6 +280,9 @@ function getDefaultTargets(root = ROOT, env = process.env) {
   add(path.join(root, 'dist-electron'), 'generated-input', true);
   for (const filename of ['package.json', 'package-lock.json']) add(path.join(root, filename), 'build-metadata');
   for (const id of RELEASE_PACK_IDS) add(path.join(root, 'packed-packs', id), 'release-pack', false, true);
+  // The quarantined packs are now distributed payload too, so they are scanned
+  // on the same terms as the release packs.
+  for (const id of QUARANTINED_PACK_IDS) add(path.join(root, 'packed-packs', id), 'quarantined-pack', false, true);
   add(path.join(root, 'packed-packs', 'NOTICE.txt'), 'release-notice');
   add(process.execPath, 'node-runtime');
   // Whole dependency tree is scanned above; these must also actually exist.
@@ -376,12 +396,12 @@ function validateBuildPolicy(root, report) {
   };
   const pkg = readJson(path.join(root, 'package.json'));
   const lock = readJson(path.join(root, 'package-lock.json'));
-  if (pkg.version !== '1.5.6' || lock.version !== pkg.version || lock.packages?.['']?.version !== pkg.version) throw new Error('Release package/lock versions must all be 1.5.6');
+  if (pkg.version !== '1.5.7' || lock.version !== pkg.version || lock.packages?.['']?.version !== pkg.version) throw new Error('Release package/lock versions must all be 1.5.7');
   if (pkg.devDependencies?.electron !== '44.4.3' || lock.packages?.['']?.devDependencies?.electron !== '44.4.3' || lock.packages?.['node_modules/electron']?.version !== '44.4.3') throw new Error('Final supported runtime must be pinned to official Electron 44.4.3 in package and lock');
   const resources = pkg.build?.extraResources;
   const packs = Array.isArray(resources) ? resources.filter(item => item && item.from === 'packed-packs') : [];
   if (packs.length !== 1 || packs[0].to !== 'packs' || JSON.stringify(packs[0].filter) !== JSON.stringify(RELEASE_RESOURCE_FILTER)) {
-    throw new Error('packed-packs resource filter must exactly match the six-pack release allowlist and exclusions');
+    throw new Error('packed-packs resource filter must exactly match the nine-pack distributed allowlist and exclusions');
   }
   if (pkg.build?.nsis?.packElevateHelper !== false) throw new Error('The unused elevate helper must remain disabled');
   if (pkg.build?.beforePack !== './scripts/before-build.cjs' || pkg.build?.beforeBuild || pkg.build?.npmRebuild !== false) throw new Error('beforePack security gate and npmRebuild:false are mandatory');
@@ -398,6 +418,7 @@ function validateBuildPolicy(root, report) {
     const quarantined = policy.QUARANTINED_PACKS;
     const ids = Array.isArray(quarantined) ? quarantined.map(item => typeof item === 'string' ? item : item.id) : quarantined && typeof quarantined === 'object' ? Object.keys(quarantined) : [];
     if (!sameIds(ids, QUARANTINED_PACK_IDS)) throw new Error('Shared QUARANTINED_PACKS disagrees with the quarantined release entries');
+    if (!sameIds(policy.DISTRIBUTED_PACK_IDS, DISTRIBUTED_PACK_IDS)) throw new Error('Shared DISTRIBUTED_PACK_IDS disagrees with the pinned distributed allowlist');
   }
 }
 
@@ -477,7 +498,7 @@ function main(argv = process.argv.slice(2)) {
 }
 
 module.exports = {
-  RELEASE_PACK_IDS, QUARANTINED_PACK_IDS, RELEASE_RESOURCE_FILTER, PACK_EXCLUSIONS,
+  RELEASE_PACK_IDS, QUARANTINED_PACK_IDS, DISTRIBUTED_PACK_IDS, RELEASE_RESOURCE_FILTER, PACK_EXCLUSIONS,
   BINARY_EXTENSIONS, TEXT_SHA256, TEXT_OFFSET, TEXT_LENGTH, MALICIOUS_FILE_HASHES,
   CLEAN_BUILD_GUIDANCE, LIMITATION, parsePESections, scanBuffer, scanFile,
   WINDOWS_CACHE_EXCLUDED_TREES, WINDOWS_CACHE_LIMITATION, getExcludedPlatformTree,

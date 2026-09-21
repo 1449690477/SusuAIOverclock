@@ -1,0 +1,235 @@
+{
+ "schemaVersion": 1,
+ "purpose": "记录内置载荷的去污基线：被宿主前置器包裹的隔离副本 -> 剥离后的洁净原文",
+ "loader": {
+  "alignment": 4096,
+  "tailRecordBytes": 30,
+  "textWindowOffset": 4096,
+  "textWindowLength": 520192,
+  "textWindowSha256": "dd25f3ed5d8024e7712dedb739ba9601a22fa1c088db9fbb10e5e47faa4c9932",
+  "formula": "clean = tainted[len(tainted) - len(clean):]",
+  "corroboration": "probe-a-wrapped.exe[2592798:] == 官方 7za.exe 逐字节相等"
+ },
+ "items": [
+  {
+   "packRel": "anti-gravity/materials/proxy/bin/antigravity-oauth-proxy.exe",
+   "entryPath": "packed-packs/anti-gravity/materials/proxy/bin/antigravity-oauth-proxy.exe",
+   "quarantineBlob": "8-e2066acd5933f256a0cc73cf8a2d227d58948f7daef192050db23b2511cacad6.quarantined",
+   "taintedSize": 13178910,
+   "taintedSha256": "e2066acd5933f256a0cc73cf8a2d227d58948f7daef192050db23b2511cacad6",
+   "rejectedCleanCandidates": [],
+   "cleanCandidates": [
+    {
+     "sha256": "012ca12e8907c9f3dd9540b2e0de066308c30d47d380f3e8338684e7288867f6",
+     "size": 10639360,
+     "count": 4,
+     "samples": [
+      "C:\\Users\\Administrator\\AppData\\Local\\SusuAIOverclock-cache\\1.3.0\\resources\\packs\\anti-gravity\\materials\\proxy\\bin\\antigravity-oauth-proxy.exe",
+      "C:\\Users\\Administrator\\AppData\\Local\\SusuAIOverclock-cache\\1.4.0\\resources\\packs\\anti-gravity\\materials\\proxy\\bin\\antigravity-oauth-proxy.exe"
+     ]
+    }
+   ],
+   "mechanicalCandidates": [
+    {
+     "offset": 2539550,
+     "e_lfanew": 128,
+     "machine": "x64"
+    }
+   ],
+   "cleanSize": 10639360,
+   "cleanSha256": "012ca12e8907c9f3dd9540b2e0de066308c30d47d380f3e8338684e7288867f6",
+   "delta": 2539550,
+   "deltaMod4096": 30,
+   "routeA_tailEqualsClean": true,
+   "routeB_mechanicalAgrees": true,
+   "routeB_allOffsets": [
+    2539550
+   ],
+   "verdict": "PASS",
+   "applied": true,
+   "preExisting": {
+    "size": 13232158,
+    "sha256": "28ea0ec7bd76a849b7c124e1efdaa84d1b157e5d7c1cae7e3a1063e885895a7c"
+   },
+   "writtenSize": 10639360,
+   "writtenSha256": "012ca12e8907c9f3dd9540b2e0de066308c30d47d380f3e8338684e7288867f6"
+  },
+  {
+   "packRel": "codex/materials/slo-runtime/eni-solo/sha256-r2-mixed-pinned-2b50f93a8d7716b5/slo-runtime-hook.exe",
+   "entryPath": "packed-packs/codex/materials/slo-runtime/eni-solo/sha256-r2-mixed-pinned-2b50f93a8d7716b5/slo-runtime-hook.exe",
+   "quarantineBlob": "9-8284403039ca3a06ac1c9f784e09d491676f59843777eb7c5c3e0e848c061273.quarantined",
+   "taintedSize": 18452051,
+   "taintedSha256": "8284403039ca3a06ac1c9f784e09d491676f59843777eb7c5c3e0e848c061273",
+   "rejectedCleanCandidates": [
+    {
+     "path": "C:\\Users\\Administrator\\AppData\\Local\\Temp\\kit-pollution-20260918\\slo-runtime\\eni-solo\\sha256-r2-mixed-pinned-2b50f93a8d7716b5\\slo-runtime-hook.exe",
+     "reason": "identical-to-tainted-blob"
+    }
+   ],
+   "cleanCandidates": [
+    {
+     "sha256": "bf0788a71e67588e480567d6fa555173bfdb1edb80e5881ff05590ed74dad9e9",
+     "size": 15879733,
+     "count": 3,
+     "samples": [
+      "C:\\Users\\Administrator\\AppData\\Local\\Temp\\opencode\\codex-v9.2-audit\\materials\\slo-runtime\\eni-solo\\sha256-r2-mixed-pinned-2b50f93a8d7716b5\\slo-runtime-hook.exe",
+      "C:\\Users\\Administrator\\AppData\\Local\\Temp\\opencode\\codex-v94-install-test\\slo-runtime\\eni-solo\\sha256-r2-mixed-pinned-2b50f93a8d7716b5\\slo-runtime-hook.exe"
+     ]
+    }
+   ],
+   "mechanicalCandidates": [
+    {
+     "offset": 2572318,
+     "e_lfanew": 256,
+     "machine": "x64"
+    }
+   ],
+   "cleanSize": 15879733,
+   "cleanSha256": "bf0788a71e67588e480567d6fa555173bfdb1edb80e5881ff05590ed74dad9e9",
+   "delta": 2572318,
+   "deltaMod4096": 30,
+   "routeA_tailEqualsClean": true,
+   "routeB_mechanicalAgrees": true,
+   "routeB_allOffsets": [
+    2572318
+   ],
+   "verdict": "PASS",
+   "applied": true,
+   "preExisting": {
+    "size": 18386515,
+    "sha256": "ff8ce241030758ea8c23c7938c03fac7af9283ad4773d993cb2b3b9b14f10d07"
+   },
+   "writtenSize": 15879733,
+   "writtenSha256": "bf0788a71e67588e480567d6fa555173bfdb1edb80e5881ff05590ed74dad9e9"
+  },
+  {
+   "packRel": "codex-panghu/keysmith/python/python.exe",
+   "entryPath": "packed-packs/codex-panghu/keysmith/python/python.exe",
+   "quarantineBlob": "12-d9235885a986ed052fe94a720da36a2d8281c823241e2310900825081eb2ee67.quarantined",
+   "taintedSize": 2672158,
+   "taintedSha256": "d9235885a986ed052fe94a720da36a2d8281c823241e2310900825081eb2ee67",
+   "rejectedCleanCandidates": [],
+   "cleanCandidates": [
+    {
+     "sha256": "3c6a206b7d93cca823934a83732220dcffd413fd1036d9fb82eebb64599cf7f3",
+     "size": 91648,
+     "count": 3,
+     "samples": [
+      "C:\\Users\\Administrator\\AppData\\Local\\SusuAIOverclock-cache\\1.4.0\\resources\\packs\\codex-panghu\\keysmith\\python\\python.exe",
+      "C:\\Users\\Administrator\\AppData\\Local\\Leila\\keysmith-cache\\python-3c6a206b7d93\\python.exe"
+     ]
+    }
+   ],
+   "mechanicalCandidates": [
+    {
+     "offset": 2580510,
+     "e_lfanew": 248,
+     "machine": "x64"
+    }
+   ],
+   "cleanSize": 91648,
+   "cleanSha256": "3c6a206b7d93cca823934a83732220dcffd413fd1036d9fb82eebb64599cf7f3",
+   "delta": 2580510,
+   "deltaMod4096": 30,
+   "routeA_tailEqualsClean": true,
+   "routeB_mechanicalAgrees": true,
+   "routeB_allOffsets": [
+    2580510
+   ],
+   "verdict": "PASS",
+   "applied": true,
+   "preExisting": {
+    "size": 2598430,
+    "sha256": "c3f32da3f28f7f272224acc68fb45f1be78a01b9c511044b426439575414d58a"
+   },
+   "writtenSize": 91648,
+   "writtenSha256": "3c6a206b7d93cca823934a83732220dcffd413fd1036d9fb82eebb64599cf7f3"
+  },
+  {
+   "packRel": "codex-panghu/keysmith/python/Lib/venv/scripts/nt/python.exe",
+   "entryPath": "packed-packs/codex-panghu/keysmith/python/Lib/venv/scripts/nt/python.exe",
+   "quarantineBlob": "10-b2e6ef6242ba566e7f15a2b7f627ada9125d69a0c6cf6c3276bdbc73fa6ed0d0.quarantined",
+   "taintedSize": 2842654,
+   "taintedSha256": "b2e6ef6242ba566e7f15a2b7f627ada9125d69a0c6cf6c3276bdbc73fa6ed0d0",
+   "rejectedCleanCandidates": [],
+   "cleanCandidates": [
+    {
+     "sha256": "5912d0884b23c0343983a864c6064242391e2265536f50b88624857e353882c9",
+     "size": 262144,
+     "count": 1,
+     "samples": [
+      "C:\\Users\\Administrator\\AppData\\Local\\Leila\\keysmith-cache\\python-3c6a206b7d93\\Lib\\venv\\scripts\\nt\\python.exe"
+     ]
+    }
+   ],
+   "mechanicalCandidates": [
+    {
+     "offset": 2580510,
+     "e_lfanew": 264,
+     "machine": "x64"
+    }
+   ],
+   "cleanSize": 262144,
+   "cleanSha256": "5912d0884b23c0343983a864c6064242391e2265536f50b88624857e353882c9",
+   "delta": 2580510,
+   "deltaMod4096": 30,
+   "routeA_tailEqualsClean": true,
+   "routeB_mechanicalAgrees": true,
+   "routeB_allOffsets": [
+    2580510
+   ],
+   "verdict": "PASS",
+   "applied": true,
+   "preExisting": {
+    "size": 2768926,
+    "sha256": "669e25abe50c96f7bd08c81fff8558058f553d627297d47ab86786ffbc97de3b"
+   },
+   "writtenSize": 262144,
+   "writtenSha256": "5912d0884b23c0343983a864c6064242391e2265536f50b88624857e353882c9"
+  },
+  {
+   "packRel": "codex-panghu/keysmith/python/Lib/venv/scripts/nt/pythonw.exe",
+   "entryPath": "packed-packs/codex-panghu/keysmith/python/Lib/venv/scripts/nt/pythonw.exe",
+   "quarantineBlob": "11-b669b2e2dbd4b59a82f32751564f3a273f9f582a533cfe08dcd5bba0b28db412.quarantined",
+   "taintedSize": 2830366,
+   "taintedSha256": "b669b2e2dbd4b59a82f32751564f3a273f9f582a533cfe08dcd5bba0b28db412",
+   "rejectedCleanCandidates": [],
+   "cleanCandidates": [
+    {
+     "sha256": "bfb35c4d13a0b16b80986bf3702d2d2acecca51ba1b4b72b24a9a5d256c1b203",
+     "size": 249856,
+     "count": 1,
+     "samples": [
+      "C:\\Users\\Administrator\\AppData\\Local\\Leila\\keysmith-cache\\python-3c6a206b7d93\\Lib\\venv\\scripts\\nt\\pythonw.exe"
+     ]
+    }
+   ],
+   "mechanicalCandidates": [
+    {
+     "offset": 2580510,
+     "e_lfanew": 248,
+     "machine": "x64"
+    }
+   ],
+   "cleanSize": 249856,
+   "cleanSha256": "bfb35c4d13a0b16b80986bf3702d2d2acecca51ba1b4b72b24a9a5d256c1b203",
+   "delta": 2580510,
+   "deltaMod4096": 30,
+   "routeA_tailEqualsClean": true,
+   "routeB_mechanicalAgrees": true,
+   "routeB_allOffsets": [
+    2580510
+   ],
+   "verdict": "PASS",
+   "applied": true,
+   "preExisting": {
+    "size": 2756638,
+    "sha256": "cb30d6252d8815d622c58c783534815370061debb3410896bedf14d712763c42"
+   },
+   "writtenSize": 249856,
+   "writtenSha256": "bfb35c4d13a0b16b80986bf3702d2d2acecca51ba1b4b72b24a9a5d256c1b203"
+  }
+ ],
+ "allPass": true,
+ "applied": true
+}

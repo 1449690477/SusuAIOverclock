@@ -248,6 +248,32 @@ test('historical imported/external/embedded sources pass through quarantine reso
   assert.doesNotMatch(sourcePolicy, /child_process|execFile|spawn\(/);
 });
 
+test('consent unlocks a pack’s own tree and never another pack’s tree', () => {
+  // v1.5.7 regression (second blocker): the recursive source-name scan matched
+  // every descendant against every quarantined id, and
+  // packed-packs/codex/breaker-tx/skills/packs/anti-gravity/ is a legitimate
+  // skill-catalogue directory of the codex toolkit. Consent therefore unlocked
+  // the policy gate and then resolvePackDir() threw in assertPackSourceAllowed,
+  // so codex install stayed dead even after a consented payload shipped.
+  const packsRoot = path.join(__dirname, '..', 'packed-packs');
+  try {
+    for (const id of Object.keys(policy.QUARANTINED_PACKS)) {
+      const tree = path.join(packsRoot, id);
+      assert.throws(() => assertPackSourceAllowed(id, tree), { code: 'ERR_PACK_QUARANTINED' }, `${id} 未同意时必须阻断`);
+      policy.grantQuarantineConsent(id);
+      assert.doesNotThrow(() => assertPackSourceAllowed(id, tree), `${id} 同意后必须能解析自己的内嵌目录`);
+    }
+    // Consent is per pack: it is never a licence to deploy another pack's tree.
+    assert.throws(() => assertPackSourceAllowed('codex', path.join(packsRoot, 'anti-gravity')), { code: 'ERR_PACK_SOURCE_QUARANTINED' });
+    assert.throws(() => assertPackSourceAllowed('anti-gravity', path.join(packsRoot, 'codex')), { code: 'ERR_PACK_SOURCE_QUARANTINED' });
+  } finally {
+    policy.setQuarantineConsent([]);
+  }
+  // Release packs keep the full descendant scan, so the exemption stays scoped.
+  assert.throws(() => assertPackSourceAllowed('workbuddy', path.join(packsRoot, 'codex')), { code: 'ERR_PACK_SOURCE_QUARANTINED' });
+  assert.throws(() => assertPackSourceAllowed('cursor', path.join(packsRoot, 'codex-panghu')), { code: 'ERR_PACK_SOURCE_QUARANTINED' });
+});
+
 test('plans, source analysis and all deep-execution helpers fail closed', () => {
   const plans = between(core, 'const DEPLOY_PLANS =', 'function detectPlatform(');
   for (const id of Object.keys(policy.QUARANTINED_PACKS)) {
@@ -348,7 +374,9 @@ test('the Claude card is a first-class release pack with a matching style token'
   assert.match(read('src/App.tsx'), /'dsh', 'claude', 'opencode'/);
   // The card must show the real embedded pack version, not a hard-coded one.
   const pkg = JSON.parse(read('package.json'));
-  assert.deepEqual(pkg.build.extraResources.find(r => r.from === 'packed-packs').filter.filter(f => f.endsWith('/**') && !f.startsWith('!')), ['cursor/**', 'dsh/**', 'claude/**', 'opencode/**', 'workbuddy/**', 'workbuddy-ai/**']);
+  // v1.5.7: the artifact ships all nine trees (see DISTRIBUTED_PACK_IDS), so the
+  // consent checkbox has a real payload to unlock.
+  assert.deepEqual(pkg.build.extraResources.find(r => r.from === 'packed-packs').filter.filter(f => f.endsWith('/**') && !f.startsWith('!')), ['cursor/**', 'dsh/**', 'claude/**', 'opencode/**', 'workbuddy/**', 'workbuddy-ai/**', 'codex/**', 'codex-panghu/**', 'anti-gravity/**']);
   assert.ok(fs.existsSync(path.join(__dirname, '..', 'packed-packs', 'claude', 'install-claude.py')));
   assert.ok(fs.existsSync(path.join(__dirname, '..', 'packed-packs', 'claude', 'README-CN.txt')));
 });
@@ -369,20 +397,110 @@ test('real filesystem: embedded Claude pack satisfies expected entries and sourc
   assert.ok(packText.includes('<!-- CHA-CLAUDE-POJIA:END -->'));
 });
 
-test('the isolated-build source export carries exactly the allowlisted packs', () => {
-  // v1.5.6 regression: the export list was hard-coded and silently omitted the
-  // newly added pack, which would have shipped an artifact missing one tree and
-  // then tripped the six-dir assertion in isolated-build-verify.cjs.
+test('the isolated-build source export carries all nine packs plus the quarantined payload', () => {
+  // v1.5.7 regression, the mirror image of v1.5.6's bug. v1.5.6 exported only the
+  // six release trees and dropped the three quarantined ones, so a registered
+  // consent had no payload to install: resolvePackDir() fell through to
+  // source:'none' and the install button stayed disabled for ever.
   const src = read('scripts/isolated-build-export.ps1');
-  const listed = [...src.matchAll(/'(packed-packs\\[A-Za-z0-9_-]+)'/g)].map(m => m[1].slice('packed-packs\\'.length));
-  assert.deepEqual(listed.slice().sort(), [...policy.RELEASE_PACK_IDS].sort());
-  for (const id of Object.keys(policy.QUARANTINED_PACKS)) {
-    assert.ok(!listed.includes(id), `${id} 是隔离载荷，不得进入构建源包`);
-    assert.match(src, new RegExp(`'${id.replace(/[-]/g, '\\-')}'`), `${id} 必须保留在 omit 名单里`);
+  const listOf = (name) => {
+    const m = new RegExp(`\\$${name} = @\\(([^)]*)\\)`).exec(src);
+    assert.ok(m, `isolated-build-export.ps1 缺少 $${name}`);
+    return [...m[1].matchAll(/'([^']+)'/g)].map(x => x[1]);
+  };
+  const packIds = listOf('packIds');
+  assert.deepEqual(packIds.slice().sort(), [...policy.DISTRIBUTED_PACK_IDS].sort());
+  assert.deepEqual(packIds.filter(id => policy.RELEASE_PACK_IDS.includes(id)).sort(), [...policy.RELEASE_PACK_IDS].sort());
+  assert.deepEqual(listOf('quarantinedPacks').slice().sort(), Object.keys(policy.QUARANTINED_PACKS).sort());
+  // The quarantined trees must no longer be stripped by the export omit list.
+  const omitAtRoot = listOf('omitAtRoot');
+  const omitAnywhere = listOf('omitAnywhere');
+  for (const id of Object.keys(policy.QUARANTINED_PACKS)) assert.ok(!omitAtRoot.includes(id) && !omitAnywhere.includes(id), `${id} 不得再被导出排除`);
+  // Build outputs must be scoped to the project root: a pack legitimately vendors
+  // its own node_modules (opencode) and keeps its own release/ folder
+  // (codex-panghu), and package.json's extraResources filter keeps both. Matching
+  // them by basename alone broke host/guest parity in every prior release.
+  for (const name of ['node_modules', 'release', 'dist-electron', 'release-next', 'release-final', '.git']) {
+    assert.ok(omitAtRoot.includes(name), `${name} 必须只在项目根目录排除`);
+    assert.ok(!omitAnywhere.includes(name), `${name} 不得按目录名全局排除`);
   }
+  // Names that the extraResources filter also excludes stay basename-global.
+  for (const name of ['backups', 'evidence', '__pycache__', '_quarantine', '_deprecated-omen-bridge']) {
+    assert.ok(omitAnywhere.includes(name), `${name} 必须与 PACK_EXCLUSIONS 对齐`);
+  }
+  // `.gitkeep` is declared, not inferred. builder-util's copyDir (the Go
+  // `app-builder copy-dir` primitive behind extraResources) skips `.gitkeep`
+  // unconditionally: a guest fixture holding `.gitkeep`, `.gitignore`,
+  // `.github/w.yml`, `.travis.yml`, `.keep` and a zero-byte file comes back with
+  // everything except `.gitkeep`. It is not the `excludedNames` list in
+  // fileMatcher.js (`.gitignore`/`.github`/`.travis.yml` are on it and survive)
+  // and not an empty-file rule (zero-byte files survive). Left undeclared, the
+  // filter and the artifact disagree on 139 placeholders -- which is exactly what
+  // the guest parity assertion caught on the first 1.5.7 build.
+  // security-preflight.test.cjs asserts this array equals RELEASE_RESOURCE_FILTER,
+  // so pinning it here transitively pins PACK_EXCLUSIONS.
+  const resourceFilter = JSON.parse(read('package.json')).build.extraResources
+    .find(item => item.from === 'packed-packs').filter;
+  assert.equal(resourceFilter.filter(f => f === '!**/.gitkeep').length, 1,
+    'package.json 过滤规则必须显式声明引擎丢弃的 .gitkeep');
+  assert.ok(omitAnywhere.includes('.gitkeep'), '.gitkeep 必须随 PACK_EXCLUSIONS 一起导出排除');
+  assert.match(src, /-not \$relative\.Contains\('\\'\)/, '根目录判定必须看相对路径，而不是目录名');
+  assert.doesNotMatch(src, /\$omit = @\(/, '旧的全局 omit 名单不得复活');
+  // v1.5.7 taint discovery. The five binaries removed by the 1.5.5 hygiene sweep
+  // can no longer be restored from .security-quarantine-1.5.5: those blobs are
+  // *themselves* wrapped by the incident host's prepender -- stripping the loader
+  // yields the pinned clean copy, but the blob as stored still carries it. The
+  // earlier export restored them verbatim, so the archive shipped the loader and
+  // the guest preflight correctly refused to package it (10 fixed-text-sha256
+  // findings on exactly these five files). The payloads are now carried de-tainted
+  // inside packed-packs/ and gated by a content baseline plus a live scan.
+  const dedetaint = JSON.parse(read('scripts/payload-dedetaint.json'));
+  assert.equal(dedetaint.allPass, true, '去污基线必须标 allPass');
+  assert.equal(dedetaint.schemaVersion, 1);
+  assert.equal(dedetaint.items.length, 5);
+  assert.match(dedetaint.loader.textWindowSha256, /^[0-9a-f]{64}$/, '基线必须钉死预挂器文本段签名');
+  assert.equal(dedetaint.loader.alignment, 4096);
+  assert.equal(dedetaint.loader.tailRecordBytes, 30);
+  const payloadSuffixes = [
+    'anti-gravity/materials/proxy/bin/antigravity-oauth-proxy.exe',
+    'codex/materials/slo-runtime/eni-solo/sha256-r2-mixed-pinned-2b50f93a8d7716b5/slo-runtime-hook.exe',
+    'codex-panghu/keysmith/python/python.exe',
+    'codex-panghu/keysmith/python/Lib/venv/scripts/nt/python.exe',
+    'codex-panghu/keysmith/python/Lib/venv/scripts/nt/pythonw.exe',
+  ];
+  for (const suffix of payloadSuffixes) {
+    const item = dedetaint.items.find(i => i.packRel === suffix);
+    assert.ok(item, `去污基线缺少载荷 ${suffix}`);
+    assert.equal(item.verdict, 'PASS', `${suffix} 必须判定 PASS`);
+    assert.equal(item.entryPath, `packed-packs/${suffix}`, 'entryPath 必须与导出期间的归档条目名一致');
+    assert.ok(item.cleanSize < item.taintedSize, `${suffix} 的干净副本必须小于被污染副本`);
+    assert.equal(item.taintedSize - item.cleanSize, item.delta);
+    assert.equal(item.delta % dedetaint.loader.alignment, dedetaint.loader.tailRecordBytes,
+      `${suffix} 被剥离的前缀必须是整数个预挂器页加一条尾记录`);
+    assert.ok(item.cleanSize > 2, `${suffix} 的干净副本必须长于一个 PE 头`);
+  }
+  // The export must be driven by that baseline, must self-heal (the incident host
+  // re-wraps newly written *.exe every 60-120 s, so the tree cannot be trusted at
+  // export time), and must fail closed on any residue.
+  assert.match(src, /scripts','payload-dedetaint\.json'/, '导出必须读取去污基线');
+  assert.match(src, /-not \$dedetaint\.allPass/, '基线未过审必须拒绝导出');
+  assert.match(src, /@\(\$dedetaint\.items\)\.Count -ne 5/, '基线必须正好覆盖五个载荷');
+  assert.match(src, /\$loaderSig -notmatch '\^\[0-9a-f\]\{64\}\$'/, '基线签名形状必须校验');
+  assert.match(src, /\$baseline\.ContainsKey\(\$entryName\)/, '必须按归档条目名匹配基线');
+  assert.match(src, /\$baseline\.Count -ne 5/, '五个载荷的归档条目名必须唯一');
+  assert.match(src, /\(\$head % \$align\) -ne \$tailRecord/, '剥离前必须先匹配已知预挂器形状');
+  assert.match(src, /\$body\[0\] -ne 77 -or \$body\[1\] -ne 90/, '恢复的载荷必须是真实 MZ 二进制');
+  assert.match(src, /if \(\$taintedHits\.Count -gt 0\)/, '残留预挂器签名必须 fail closed');
+  assert.match(src, /\$dedetainted\.Count -ne 5/, '归档里必须正好五个去污载荷，缺任一即 fail closed');
+  assert.match(src, /restoredFromQuarantine=@\(\)/, '隔离区恢复路径必须彻底移除');
+  assert.doesNotMatch(src, /quarantinePath/, '导出不得再读取隔离区 blob');
+  assert.doesNotMatch(src, /\$requiredPayload/, '旧的隔离区恢复名单不得复活');
   assert.match(src, /packed-packs\\NOTICE\.txt/, 'NOTICE.txt 必须随包导出');
-  assert.match(src, /projectVersion='1\.5\.6'/);
-  assert.match(src, /susu156-source\.zip/, '默认输出名必须跟随当前版本');
+  // The extension guard stays: executables are legal only inside the reviewed
+  // quarantined payload prefixes, never anywhere else in the tree.
+  assert.match(src, /-and -not \$payload\) \{ throw "Executable extension in source/, '.exe/.dll/.pyd 只允许出现在隔离载荷前缀内');
+  assert.match(src, /projectVersion='1\.5\.7'/);
+  assert.match(src, /susu157-source\.zip/, '默认输出名必须跟随当前版本');
 });
 
 test('the isolated GUI smoke pack lists and names track the real pack table', () => {
@@ -410,9 +528,61 @@ test('the isolated GUI smoke pack lists and names track the real pack table', ()
   assert.ok(words[total], `需要为总数 ${total} 补充英文数字`);
   assert.match(src, new RegExp(`pack-card-\\"\\]'\\)\\.length === ${total}`, 'g'), `卡片总数断言必须等于 ${total}`);
   assert.ok(src.includes(`retains ${words[total]} cards`), `返回工具箱卡片数断言必须等于 ${total}`);
-  assert.ok(src.includes(`exactly ${words[allowed.length] || allowed.length} allowed pack directories`), `资源目录数断言必须等于 ${allowed.length}`);
+  // v1.5.7: all nine trees ship, so the resource-directory assertion counts the
+  // distributed total. The found-filter assertion still counts only the six
+  // release packs, because an un-consented quarantined id resolves to
+  // source:'quarantined' with found=false — identical to the old hard quarantine.
+  assert.ok(src.includes(`exactly ${words[total]} distributed pack directories`), `资源目录数断言必须等于 ${total}`);
   assert.ok(src.includes(`filter shows ${words[allowed.length] || allowed.length}`), `found 过滤器数量断言必须等于 ${allowed.length}`);
+  assert.ok(src.includes('shipped quarantined payload present and non-empty'), '必须断言隔离载荷真的随包发出');
   assert.ok(src.includes(`${words[total]} expected resource IDs`), `资源 ID 数量断言必须等于 ${total}`);
+  // The Python driver mirrors the same three axes and is not covered by the
+  // literals above, so pin it here rather than trusting the reader's eye.
+  const driver = read('scripts/isolated-gui-smoke.py');
+  const pyList = (name) => {
+    const m = new RegExp(`^${name} = \\[([^\\]]*)\\]`, 'm').exec(driver);
+    assert.ok(m, `isolated-gui-smoke.py 缺少 ${name}`);
+    return [...m[1].matchAll(/'([^']+)'/g)].map(x => x[1]);
+  };
+  assert.deepEqual(pyList('ALLOWED').slice().sort(), [...policy.RELEASE_PACK_IDS].sort());
+  assert.deepEqual(pyList('RETIRED').slice().sort(), Object.keys(policy.QUARANTINED_PACKS).sort());
+  assert.match(driver, /DISTRIBUTED = sorted\(ALLOWED \+ RETIRED\)/, '派生列表必须由两条轴拼出');
+  assert.match(driver, /packResourceDirectories'\] == DISTRIBUTED/,
+    '解包目录断言必须等于九包，而不是仅六包发布白名单');
+});
+
+test('the source archive is extracted by a UTF-8 safe unpacker, not `unzip`', () => {
+  // v1.5.7 defect: Ubuntu ships Info-ZIP UnZip 6.00, which rewrites bit-11 UTF-8
+  // entry names into the OEM/CP437 glyph set under the guest's C.UTF-8 locale.
+  // `unzip` therefore turned packed-packs/cursor/一键安装.bat into
+  // packed-packs/cursor/ф╕АщФохоЙшгЕ.bat and produced 454 garbled paths in the
+  // shipped portable exe. Ground truth from the guest: `unzip` wrote byte 0xD1
+  // where `zipfile` wrote 0xE4 for the same entry. The archive is correct (all 566
+  // non-ASCII names carry the UTF-8 flag); only the extractor was wrong.
+  //
+  // This is the same drift class as the pack lists: a harness that is not proven
+  // against the host-written manifest cannot detect a mangled transfer, because
+  // the guest tree would still agree with itself.
+  const unpacker = read('scripts/isolated-build-unpack.py');
+  const verifier = read('scripts/isolated-build-verify.cjs');
+  assert.match(unpacker, /zipfile\.ZipFile\(archive\)/, '必须用 zipfile 解包');
+  assert.match(unpacker, /MANIFEST_NAME = 'SOURCE-MANIFEST\.json'/);
+  assert.match(unpacker, /manifest\['schemaVersion'\] == 2/);
+  assert.match(unpacker, /sha256_file\(target\) != record\['sha256'\]/, '必须逐文件复核 sha256');
+  assert.match(unpacker, /item\.external_attr >> 16\) & 0o170000\) != 0o120000|mode != 0o120000/, '必须拒绝归档符号链接');
+  assert.match(unpacker, /'\.\.' not in relative\.parts/, '必须拒绝越界路径');
+  assert.match(unpacker, /CURSOR_ENTRY_FILES/, '必须点名断言中文入口文件');
+  assert.match(unpacker, /一键安装\.bat/);
+  assert.match(unpacker, /report\['unpackerSha256'\] == sha256_file/, '归档内副本必须与运行的副本逐字节相同');
+  assert.match(unpacker, /do not attest the host|不 attest|does not attest the host/);
+  // The verifier is the gate that actually runs on every guest build; it must
+  // compare the guest tree against the HOST manifest, not against itself.
+  assert.match(verifier, /SOURCE-MANIFEST\.json 缺失/, '产物校验必须要求主机清单');
+  assert.match(verifier, /传输把文件名改坏了/);
+  assert.match(verifier, /packed-packs 的主机清单与客体解包树必须逐名一致/);
+  assert.match(verifier, /source-transfer-integrity\.json/);
+  // Export must carry the unpacker: it is matched by the isolated-build* glob.
+  assert.match(read('scripts/isolated-build-export.ps1'), /'isolated-build\*'/);
 });
 
 // Explicit opt-in: checks the actual packed trees, not installed user profiles.

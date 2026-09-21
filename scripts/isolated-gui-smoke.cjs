@@ -11,7 +11,7 @@ assert(options.root && /^\d+\.\d+\.\d+$/.test(options.runtime || ''), '--root an
 const root = path.resolve(options.root);
 const runtime = options.runtime;
 const staged = path.join(root, 'gui-runtime', `electron-${runtime}`, 'linux-x64');
-const expectedAppVersion = process.env.GUI_APP_VERSION || '1.5.6';
+const expectedAppVersion = process.env.GUI_APP_VERSION || '1.5.7';
 const { _electron, chromium } = require(path.join(root, 'project/node_modules/playwright-core'));
 const out = process.env.GUI_RUN_DIR;
 const mode = process.env.GUI_MODE;
@@ -59,6 +59,33 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 const nativePath = value => /^[cC]:/.test(value)
   ? path.join(process.env.WINEPREFIX, 'drive_c', value.slice(3).replaceAll('\\', '/'))
   : value.replace(/^Z:/, '').replaceAll('\\', '/');
+// Mirrors electron/core.cjs SKIP_DIRS. A distributed pack may legitimately vendor
+// one of these: opencode ships its own node_modules (@electron/asar is what
+// patch-opencoe.js loads) and codex-panghu keeps keysmith/release. walkStats
+// skips them for the byte/file stats and reports the count truthfully as a UI
+// notice, so the smoke accepts exactly that notice -- and only when the skipped
+// directories really exist on disk with a matching count. Every other warning
+// (missing entries, empty dir, no version marker) still fails the check.
+const SKIP_DIR_NAMES = new Set(['node_modules', '.git', '.cache', '__pycache__', '.venv', 'venv']);
+function countSkipDirs(dir) {
+  let skipped = 0;
+  const pending = [dir];
+  while (pending.length) {
+    const current = pending.pop();
+    let entries;
+    try {
+      entries = fs.readdirSync(current, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const ent of entries) {
+      if (!ent.isDirectory()) continue;
+      if (SKIP_DIR_NAMES.has(ent.name)) skipped += 1;
+      else pending.push(path.join(current, ent.name));
+    }
+  }
+  return skipped;
+}
 
 function targetSnapshot() {
   const keys = ['USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'CODEX_HOME', 'DSH_HOME', 'WB_HOME', 'WBAI_HOME'];
@@ -148,6 +175,22 @@ async function run() {
   for (const p of context.pages()) observe(p);
   page = app ? await app.firstWindow({ timeout: 30000 }) : context.pages()[0] || await context.waitForEvent('page', { timeout: 30000 });
   page.setDefaultTimeout(15000);
+  // page.waitForFunction() *with an argument* rebuilds the predicate by eval()-ing
+  // it inside the page, and the bundled dist-electron/index.html ships a strict CSP
+  // (script-src 'self', no 'unsafe-eval'). Playwright then throws EvalError instead
+  // of waiting, so any caller that wrapped it in .then(ok, err => false) silently
+  // recorded a product failure. page.evaluate() goes over CDP and is CSP-safe, so
+  // poll from Node and never let a CSP error masquerade as an app defect.
+  const poll = async (predicate, arg, { timeout = 30000, interval = 200 } = {}) => {
+    const deadline = Date.now() + timeout;
+    for (;;) {
+      const hit = await page.evaluate(predicate, arg).catch(() => false);
+      if (hit) return true;
+      if (Date.now() >= deadline) return false;
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise(resolve => { setTimeout(resolve, interval); });
+    }
+  };
   // Let the original initial scan finish before a renderer reload; do not pile
   // two scans onto a 2 GiB guest. Reload captures initial JS/preload diagnostics.
   const readyStarted = Date.now();
@@ -169,8 +212,22 @@ async function run() {
   report.detect = detect;
   const packRoot = path.join(staged, 'resources/packs');
   const resourceNames = fs.readdirSync(packRoot, { withFileTypes: true }).filter(e => e.isDirectory()).map(e => e.name).sort();
-  check('resources contain exactly six allowed pack directories', JSON.stringify(resourceNames) === JSON.stringify([...allowed].sort()), resourceNames);
-  for (const id of blocked) check(`${id}: retired pack absent from real resources`, !fs.existsSync(path.join(packRoot, id)));
+  // v1.5.7: all nine directories ship. The quarantined three carry a real payload
+  // so that a registered consent has something to install; shipping them is a
+  // distribution decision, never a deploy permission (see DISTRIBUTED_PACK_IDS).
+  check('resources contain exactly nine distributed pack directories', JSON.stringify(resourceNames) === JSON.stringify([...allowed, ...blocked].sort()), resourceNames);
+  for (const id of blocked) {
+    const shipped = [];
+    const walk = dir => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) walk(full); else shipped.push(full);
+      }
+    };
+    walk(path.join(packRoot, id));
+    // Without this the consent checkbox would unlock a pack with no payload.
+    check(`${id}: shipped quarantined payload present and non-empty`, shipped.length > 0, { files: shipped.length });
+  }
   for (const p of hub.packs) {
     check(`${p.id}: exact IPC and UI card name`, p.name === names[p.id] && (await page.getByTestId(`pack-card-${p.id}`).locator('.pack-name').innerText()) === names[p.id]);
   }
@@ -181,7 +238,9 @@ async function run() {
     check(`${id}: found embedded source`, p.found && p.source === 'embedded' && !p.blockedReason && p.fileCount > 0, { name: p.name, fileCount: p.fileCount, source: p.source });
     check(`${id}: embedded UI label`, (await page.getByTestId(`source-${id}`).innerText()) === '内嵌');
     check(`${id}: exact embedded resource path`, nativePath(p.path) === path.join(packRoot, id));
-    check(`${id}: no missing expected entries or scan warnings`, p.missingEntries.length === 0 && p.warnings.length === 0, { missingEntries: p.missingEntries, warnings: p.warnings });
+    const skipNotice = p.skippedDirs > 0 ? [`已跳过 ${p.skippedDirs} 个缓存目录`] : [];
+    const onDiskSkipped = countSkipDirs(path.join(packRoot, id));
+    check(`${id}: no missing entries, only verified cache-skip notices`, p.missingEntries.length === 0 && onDiskSkipped === p.skippedDirs && JSON.stringify([...p.warnings].sort()) === JSON.stringify([...skipNotice].sort()), { missingEntries: p.missingEntries, warnings: p.warnings, skippedDirs: p.skippedDirs, onDiskSkipped });
     const buttons = {
       installEnabled: await page.getByTestId(`install-${id}`).isEnabled(),
       uninstallEnabled: await page.getByTestId(`uninstall-${id}`).isEnabled(),
@@ -240,7 +299,16 @@ async function run() {
     await page.getByTestId(`pack-card-${id}`).locator('.pack-name').click();
     await page.getByTestId('pack-detail-modal').waitFor();
     const detailText = await page.getByTestId('pack-detail-modal').innerText();
-    check(`${id}: detail quarantine warning`, detailText.includes('已隔离 · 载荷操作禁用'));
+    // PackDetailModal renders the quarantine notice from one of two branches:
+    // consentRequired (v1.5.6+: the retired packs are consent-gated) shows the
+    // consent box head, while a hard-blocked pack with no consent path shows the
+    // legacy "载荷操作禁用" warn box. Requiring the legacy wording alone was stale:
+    // all three retired packs are consentRequired now, so that branch is
+    // unreachable and the assertion could never pass. Require that the detail
+    // actually carries a quarantine notice, in whichever model the pack uses.
+    const quarantineNotice = ['该载荷已隔离 · 需勾选知情同意', '已隔离 · 载荷操作禁用']
+      .find(text => detailText.includes(text));
+    check(`${id}: detail quarantine warning`, Boolean(quarantineNotice), { notice: quarantineNotice || null });
     check(`${id}: detail consent box mirrors the card`, detailText.includes('该载荷已隔离 · 需勾选知情同意') && detailText.includes('我知晓 同意') && await page.getByTestId(`detail-quarantine-${id}`).count() === 1 && !(await page.getByTestId(`detail-consent-check-${id}`).isChecked()));
     for (const tid of ['detail-install', 'detail-uninstall', 'detail-deep-verify', 'detail-capture', 'detail-verify']) check(`${id}: disabled ${tid}`, await page.getByTestId(tid).isDisabled());
     await screenshot('05-detail-' + id);
@@ -353,7 +421,36 @@ async function run() {
   const consentProbe = blocked[0];
   report.consentRoundTrip = [];
   for (const granted of [true, false]) {
-    const nextHub = await page.evaluate(({ id, granted }) => window.dango.setConsent(id, granted), { id: consentProbe, granted });
+    // Drive the real user gesture. App.tsx's own setConsent handler is what calls
+    // setHub()/refreshDetect() and re-renders the card; invoking the preload IPC
+    // directly (window.dango.setConsent) updates main-process state but leaves the
+    // renderer untouched, so a DOM assertion after that call tests nothing a user
+    // can reach. v1.5.6's reported defect -- "I ticked consent and it still will
+    // not install" -- lives precisely on this path, so the smoke has to click the
+    // same checkbox a user clicks and then assert the card and buttons re-render.
+    //
+    // One click, then poll -- never locator.check()/uncheck(). `checked` is bound
+    // to pack.consented, which only flips once the async
+    // window.dango.setConsent() round trip resolves and setHub() re-renders.
+    // check() verifies input.checked immediately after each click and, seeing a
+    // controlled input still reporting its old value, clicks again; the retries
+    // race the in-flight round trip. Clicking once and polling the rendered card
+    // is the same user gesture without depending on an instantaneous DOM state.
+    const consentBox = page.getByTestId(`consent-check-${consentProbe}`);
+    await consentBox.scrollIntoViewIfNeeded();
+    if ((await consentBox.isChecked()) !== granted) await consentBox.click();
+    const reRendered = await poll(
+      ({ id, want }) => {
+        const box = document.querySelector(`[data-testid="consent-check-${id}"]`);
+        const card = document.querySelector(`[data-testid="pack-card-${id}"]`);
+        return Boolean(
+          box && box.checked === want && card && card.innerText.includes(want ? '隔离已解锁' : '已隔离 · 只读')
+        );
+      },
+      { id: consentProbe, want: granted }
+    );
+    check(`${consentProbe}: consent ${granted ? 'grant' : 'revoke'} re-renders the card`, reRendered);
+    const nextHub = await page.evaluate(() => window.dango.load());
     const nextDetect = await page.evaluate(() => window.dango.detect());
     const p = nextHub.packs.find(p => p.id === consentProbe);
     const plan = nextDetect.plans[consentProbe];
@@ -362,11 +459,20 @@ async function run() {
       check(`${consentProbe}: consent unlocks hub state`, p.consentRequired === true && p.consented === true && !p.blockedReason && (nextHub.consents || []).includes(consentProbe));
       check(`${consentProbe}: consent unlocks the real main-process plan`, plan.hasInstall && plan.hasUninstall && plan.consented === true && !plan.blockedReason, plan);
       check(`${consentProbe}: legacy script retained after unlock`, plan.installFile === 'install-replica.ps1', plan.installFile);
+      // v1.5.7 regression guard for the v1.5.6 bug: consent flipped the policy gate
+      // but the artifact carried no payload, so resolvePackDir() fell through to
+      // source:'none', found stayed false and the install button was disabled for
+      // ever. A registered consent must now resolve the shipped embedded tree.
+      check(`${consentProbe}: unlock exposes the shipped embedded payload`, p.found === true && p.source === 'embedded' && p.fileCount > 0 && nativePath(p.path) === path.join(packRoot, consentProbe), { found: p.found, source: p.source, fileCount: p.fileCount });
+      const installEnabled = await poll(id => document.querySelector(`[data-testid="install-${id}"]`)?.disabled === false, consentProbe, { timeout: 15000 });
+      check(`${consentProbe}: consent makes install and monitor clickable`, installEnabled && await page.getByTestId(`deep-verify-btn-${consentProbe}`).isEnabled());
+      report.buttonStates[consentProbe] = { installEnabled, uninstallEnabled: await page.getByTestId(`uninstall-${consentProbe}`).isEnabled(), monitorEnabled: await page.getByTestId(`deep-verify-btn-${consentProbe}`).isEnabled(), consented: true, source: p.source, found: p.found };
       check(`${consentProbe}: badge switches to unlocked`, (await page.getByTestId(`pack-card-${consentProbe}`).innerText()).includes('隔离已解锁'));
       check(`${consentProbe}: block notice disappears`, await page.getByTestId(`quarantine-${consentProbe}`).count() === 0 && await page.getByTestId(`consent-check-${consentProbe}`).isChecked());
     } else {
       check(`${consentProbe}: revoke restores fail-closed`, Boolean(p.blockedReason) && p.consented === false && !plan.hasInstall && !plan.hasUninstall && Boolean(plan.blockedReason));
       check(`${consentProbe}: revoke restores the badge and block notice`, (await page.getByTestId(`pack-card-${consentProbe}`).innerText()).includes('已隔离 · 只读') && await page.getByTestId(`quarantine-${consentProbe}`).count() === 1 && !(await page.getByTestId(`consent-check-${consentProbe}`).isChecked()));
+      check(`${consentProbe}: revoke disables install and monitor again`, await page.getByTestId(`install-${consentProbe}`).isDisabled() && await page.getByTestId(`deep-verify-btn-${consentProbe}`).isDisabled());
     }
   }
   check('consent: only the quarantined id can be granted', Boolean((await page.evaluate(() => window.dango.setConsent('claude', true).then(() => null, e => String(e.message || e)))).includes('该包不属于隔离载荷')));

@@ -28,8 +28,15 @@ import zipfile
 BASE = PROJECT = RUNTIME = WIN = STAGED = None
 VERSION = RELEASE = ZIP = SHA = None
 ARGS = None
-ALLOWED = ['cursor', 'dsh', 'opencode', 'workbuddy', 'workbuddy-ai']
+# Authoritative lists mirror electron/security-policy.cjs and the same literals in
+# isolated-gui-smoke.cjs; tests/security-quarantine.test.cjs asserts they still
+# equal the policy, so drift fails the fast suite.
+#   ALLOWED  == RELEASE_PACK_IDS      -> deploy allowlist, installable by default
+#   RETIRED  == QUARANTINED_PACK_IDS  -> consent-required, blocked until consent
+#   ALLOWED+RETIRED == DISTRIBUTED_PACK_IDS -> what actually ships in resources/packs
+ALLOWED = ['cursor', 'dsh', 'claude', 'opencode', 'workbuddy', 'workbuddy-ai']
 RETIRED = ['codex', 'codex-panghu', 'anti-gravity']
+DISTRIBUTED = sorted(ALLOWED + RETIRED)
 NESTED = {'cursor': ['materials/rules', 'materials/tools/cursor_tamper_proxy.py'],
           'workbuddy-ai': ['materials/IDENTITY.md', 'materials/MEMORY.md', 'materials/SOUL-snippet.txt']}
 KEYS = ('HOME', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'CODEX_HOME',
@@ -89,7 +96,9 @@ def inspect():
             'packResourceDirectories': sorted(p.name for p in (WIN / 'resources/packs').iterdir() if p.is_dir()),
             'nestedPaths': [{'id': pack, 'path': rel, 'exists': (WIN / 'resources/packs' / pack / rel).exists()}
                             for pack, paths in NESTED.items() for rel in paths]}
-    assert data['packResourceDirectories'] == sorted(ALLOWED)
+    # v1.5.7: distribution is nine packs, deployment is six. The quarantined three
+    # ship with a real payload so a registered consent has something to install.
+    assert data['packResourceDirectories'] == DISTRIBUTED
     assert all(p['exists'] for p in data['nestedPaths'])
     if ARGS.artifact_sha256:
         assert data['portableSHA256'] == ARGS.artifact_sha256, 'Unexpected final portable artifact'
@@ -415,7 +424,7 @@ if __name__ == '__main__':
     parser.add_argument('--runtime', required=True, help='Official Electron version, e.g. 44.4.3')
     parser.add_argument('--runtime-sha256', help='Independently obtained official Linux x64 ZIP SHA-256 (required for stage)')
     parser.add_argument('--artifact-sha256', help='Expected final portable EXE SHA-256 (read-only identity check)')
-    parser.add_argument('--app-version', default='1.5.6')
+    parser.add_argument('--app-version', default='1.5.7')
     parser.add_argument('--node', help='Explicit trusted guest Node executable, otherwise discover under this root or /opt')
     parser.add_argument('mode', choices=['inspect', 'stage', 'wine', 'linux', 'linux-no-sandbox', 'finalize', 'review', '_network'])
     parser.add_argument('extra', nargs='*')

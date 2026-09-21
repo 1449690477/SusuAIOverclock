@@ -26,8 +26,9 @@ export default function SettingsView({
         <h2>根目录</h2>
         <p className="desc">
           发布允许包为 cursor / dsh / claude / opencode / workbuddy / workbuddy-ai。
-          Codex、胖虎、反重力旧载荷默认隔离；更换根目录、导入目录或旧备份都不能解除隔离，
-          只有在对应卡片上勾选「我知晓 同意」才会为该载荷解锁安装、卸载、备份、恢复与深度验证，撤销即恢复隔离。
+          Codex、胖虎、反重力三个旧载荷随包内置（勾选知情后要有真实载荷才能安装），但默认阻断；
+          更换根目录、导入目录或旧备份都不能解除阻断，
+          只有在对应卡片上勾选「我知晓 同意」才会为该载荷解锁安装、卸载、备份、恢复与深度验证，撤销即恢复阻断。
         </p>
 
         <div className="setting-row">

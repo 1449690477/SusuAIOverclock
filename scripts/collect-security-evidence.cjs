@@ -24,10 +24,10 @@ const sourceChecks = RELEASE_PACK_IDS.map(id => {
 });
 const report = {
   schemaVersion: 1, startedAt, finishedAt: new Date().toISOString(),
-  releaseVersion: '1.5.6', executableBuilt: false, hostCleaned: false,
+  releaseVersion: '1.5.7', executableBuilt: false, hostCleaned: false,
   limitation: scanner.LIMITATION, inventory, preflight, sourceChecks,
 };
-const filename = path.join(outputDir, `security-audit-1.5.6-${Date.now()}.json`);
+const filename = path.join(outputDir, `security-audit-1.5.7-${Date.now()}.json`);
 fs.writeFileSync(filename, JSON.stringify(report, null, 2) + '\n', { flag: 'wx', encoding: 'utf8' });
 for (const [label, result] of [['inventory', inventory], ['build-preflight', preflight]]) {
   console.log(`${label}: status=${result.status}; binaries=${result.filesScanned}; affectedFiles=${new Set(result.findings.map(f => f.path)).size}; errors=${result.errors.length}`);

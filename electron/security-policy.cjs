@@ -9,12 +9,22 @@
 // blocked reason is returned, assert* throw, and no plan reports install.
 // Build tooling can require this file without core.
 const RELEASE_PACK_IDS = Object.freeze(['cursor', 'dsh', 'claude', 'opencode', 'workbuddy', 'workbuddy-ai']);
-const RESTORE_SOURCE_WARNING = '恢复源不可信（restore-source-not-trusted）：旧备份、外部目录、导入副本和历史内嵌包均不得用于恢复该载荷。隔离不代表用户目录已清理。';
+const RESTORE_SOURCE_WARNING = '恢复源不可信（restore-source-not-trusted）：旧备份、外部目录、导入副本和历史内嵌包均不作为该载荷的可信恢复源。隔离不代表用户目录已清理。';
 const QUARANTINED_PACKS = Object.freeze({
-  codex: `Codex 冷咖啡石井旧载荷已从发布范围移除并隔离：slo-runtime-hook.exe 已知受文件前置感染影响。禁止安装、卸载脚本、深度验证、复制和恢复。${RESTORE_SOURCE_WARNING}`,
-  'codex-panghu': `Codex 胖虎旧载荷已隔离：随包 python.exe 及 venv 启动器已知受感染影响。禁止安装、卸载脚本、深度验证、复制和恢复。${RESTORE_SOURCE_WARNING}`,
-  'anti-gravity': `反重力旧载荷已隔离：antigravity-oauth-proxy.exe 已知受感染影响。禁止安装、卸载脚本、深度验证、复制和恢复。${RESTORE_SOURCE_WARNING}`
+  codex: `Codex 冷咖啡石井旧载荷已隔离：slo-runtime-hook.exe 曾被列为不可信样本，随包内置。默认阻断安装、卸载脚本、深度验证、复制和恢复；勾选「我知晓 同意」后解锁。${RESTORE_SOURCE_WARNING}`,
+  'codex-panghu': `Codex 胖虎旧载荷已隔离：随包 python.exe 及 venv 启动器曾被列为不可信样本，随包内置。默认阻断安装、卸载脚本、深度验证、复制和恢复；勾选「我知晓 同意」后解锁。${RESTORE_SOURCE_WARNING}`,
+  'anti-gravity': `反重力旧载荷已隔离：antigravity-oauth-proxy.exe 曾被列为不可信样本，随包内置。默认阻断安装、卸载脚本、深度验证、复制和恢复；勾选「我知晓 同意」后解锁。${RESTORE_SOURCE_WARNING}`
 });
+
+// Every pack directory that ships inside the portable artifact. The quarantined
+// three are distributed too — but only so that a user who ticks the consent box
+// has an actual payload to install. Distribution is not a safety verdict:
+// RELEASE_PACK_IDS stays the deploy allowlist, and getPackBlockReason() still
+// blocks the quarantined ids until consent is registered.
+const DISTRIBUTED_PACK_IDS = Object.freeze([
+  ...RELEASE_PACK_IDS,
+  ...Object.keys(QUARANTINED_PACKS)
+]);
 
 // Not a safety verdict: this is the exact text the user must tick. Keeping it
 // here (not in the renderer) means the same wording is shown and persisted.
@@ -112,7 +122,7 @@ function getSourceNameBlockReason(value) {
 }
 
 module.exports = Object.freeze({
-  RELEASE_PACK_IDS, QUARANTINED_PACKS, RESTORE_SOURCE_WARNING,
+  RELEASE_PACK_IDS, DISTRIBUTED_PACK_IDS, QUARANTINED_PACKS, RESTORE_SOURCE_WARNING,
   QUARANTINE_CONSENT_LABEL, QUARANTINE_CONSENT_NOTICE,
   isQuarantinedId, setQuarantineConsent, grantQuarantineConsent, revokeQuarantineConsent,
   grantedQuarantineIds, hasQuarantineConsent,

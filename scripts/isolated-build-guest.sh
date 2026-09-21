@@ -14,12 +14,12 @@ mkdir -p "$BASE/logs" "$BASE/downloads" "$BASE/toolchain" "$BASE/cache/builder" 
 exec > >(tee "$BASE/logs/${PHASE}-$(date -u +%Y%m%dT%H%M%SZ).log") 2>&1
 trap 'rc=$?; printf "PHASE=%s EXIT=%s UTC=%s\n" "$PHASE" "$rc" "$(date -u +%FT%TZ)"' EXIT
 printf 'PHASE=%s START=%s\n' "$PHASE" "$(date -u +%FT%TZ)"
-printf 'BUILD_ID=%s ELECTRON=44.4.3 APP_VERSION=1.5.6 GUI=pending-new-build\n' "$BUILD_ID"
+printf 'BUILD_ID=%s ELECTRON=44.4.3 APP_VERSION=1.5.7 GUI=pending-new-build\n' "$BUILD_ID"
 export PATH="$BASE/toolchain/node-v22.23.2-linux-x64/bin:/usr/bin:/bin"
 # Evidence destination, download cache and expected PE version must all follow the
 # tree being built; the harness defaults keep the original 1.5.5 values.
 export ISOLATED_BUILD_BASE="$BASE" ISOLATED_BUILD_ID="$BUILD_ID" ISOLATED_BUILD_DOWNLOADS="$BASE/downloads"
-export EXPECTED_APP_VERSION="$(node -p "require('$PROJECT/package.json').version" 2>/dev/null || printf 1.5.6)"
+export EXPECTED_APP_VERSION="$(node -p "require('$PROJECT/package.json').version" 2>/dev/null || printf 1.5.7)"
 export ELECTRON_BUILDER_CACHE="$BASE/cache/builder"
 export npm_config_cache="$BASE/cache/npm"
 mkdir -p "$BASE/config"
@@ -66,6 +66,16 @@ elif [[ "$PHASE" == build ]]; then
   DANGO_TEST_REAL_PACKS=1 node --test tests/security-quarantine.test.cjs tests/security-preflight.test.cjs
   node node_modules/typescript/bin/tsc --noEmit
   node scripts/preflight-security.cjs --json > "$BASE/reports/preflight-before.json"
+  # The artifact verifier refuses a pre-existing verification directory, and it
+  # unpacks into it before asserting. A build that failed anywhere after packaging
+  # (parity, PE version, runtime proof) therefore left evidence behind and the
+  # next identical run died on "Refusing stale verification destination" instead
+  # of re-testing the tree. The build phase regenerates the whole artifact, so the
+  # previous run's unfold is never evidence for this run: clear it explicitly.
+  if [[ -d "$BASE/verification" ]]; then
+    printf 'clearing stale verification directory: %s\n' "$BASE/verification"
+    rm -rf "$BASE/verification"
+  fi
   node scripts/apply-portable-patch.cjs
   node node_modules/vite/bin/vite.js build
   xvfb-run -a node scripts/pack-portable.cjs

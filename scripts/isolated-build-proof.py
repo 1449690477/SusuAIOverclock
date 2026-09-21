@@ -2,11 +2,14 @@
 """Guest-only final transfer/source/embedded-input byte comparison."""
 import hashlib
 import json
+import os
 import pathlib
 import sys
 import zipfile
 
-base = pathlib.Path('/home/builder/susu155-final44')
+# Evidence root must follow the tree being verified; a hardcoded 1.5.5 root made
+# a later release read the previous release's reports.
+base = pathlib.Path(os.environ.get('ISOLATED_BUILD_BASE', '/home/builder/susu155-final44'))
 project = base / 'project'
 archive = pathlib.Path(sys.argv[1])
 
@@ -17,6 +20,19 @@ def sha(data):
 
 with zipfile.ZipFile(archive) as z:
     manifest = json.loads(z.read('SOURCE-MANIFEST.json'))
+    # payloadBinaries is every MZ file the export ships -- all of them inside the
+    # three quarantined pack trees, because an MZ anywhere else aborts the export.
+    # The five de-tainted payloads are a separate, pinned subset
+    # (dedetaintedPayload); asserting payloadBinaries == 5 was stale the moment
+    # the quarantined trees legitimately carried their own bundled binaries
+    # (python.exe, 7za, ...). "No executable outside the quarantined trees" is
+    # proven by the per-file MZ assertion below, not by a hardcoded count.
+    payload_paths = {record['path'] for record in manifest['payloadBinaries']}
+    dedetainted_paths = {record['path'] for record in manifest['dedetaintedPayload']}
+    assert len(dedetainted_paths) == 5, len(dedetainted_paths)
+    assert dedetainted_paths <= payload_paths, sorted(dedetainted_paths - payload_paths)
+    assert payload_paths and all(name.startswith('packed-packs/') for name in payload_paths), sorted(payload_paths)[:5]
+    assert manifest.get('restoredFromQuarantine') == [], 'the retired quarantine-restore mechanism must not reappear'
     for record in manifest['files']:
         name = record['path']
         relative = pathlib.PurePosixPath(name)
@@ -25,7 +41,10 @@ with zipfile.ZipFile(archive) as z:
         assert target.resolve().is_relative_to(project.resolve())
         assert not target.is_symlink()
         data = target.read_bytes()
-        assert data[:2] != b'MZ'
+        if name in payload_paths:
+            assert data[:2] == b'MZ', name
+        else:
+            assert data[:2] != b'MZ', name
         assert len(data) == record['size'] and sha(data) == record['sha256'], name
         assert sha(z.read(name)) == record['sha256'], name
     (base / 'reports' / 'FINAL-SOURCE-MANIFEST.json').write_bytes(z.read('SOURCE-MANIFEST.json'))

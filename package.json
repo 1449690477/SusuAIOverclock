@@ -1,6 +1,6 @@
 {
   "name": "dango-desk",
-  "version": "1.5.6",
+  "version": "1.5.7",
   "private": true,
   "description": "苏苏 AI超频 - 六个发布工具包与平台管理；新增 Claude Code 破甲包；Codex 冷咖啡石井、Codex 胖虎、反重力旧载荷默认隔离，勾选知情同意后方可安装",
   "main": "electron/main.cjs",
@@ -81,6 +81,9 @@
           "opencode/**",
           "workbuddy/**",
           "workbuddy-ai/**",
+          "codex/**",
+          "codex-panghu/**",
+          "anti-gravity/**",
           "NOTICE.txt",
           "!**/_deprecated-omen-bridge/**",
           "!**/backups/**",
@@ -89,7 +92,8 @@
           "!**/_quarantine/**",
           "!**/_cli-layer-state.json",
           "!**/_inject-layer-state.json",
-          "!**/*.pyc"
+          "!**/*.pyc",
+          "!**/.gitkeep"
         ]
       },
       {

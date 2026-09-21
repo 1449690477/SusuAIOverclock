@@ -3,6 +3,9 @@ node_modules/
 
 # build output
 dist-electron/
+# 历史构建产物备份（dist-electron.pre<ver>-<ts>/ 一类）。
+# 注意：`dist-electron/` 只精确匹配该目录名，备份目录曾以未跟踪状态混进 `git add -A`。
+dist-electron.*/
 release/
 release-final/
 release-next/
@@ -21,6 +24,10 @@ packed-packs/
 *.log
 npm-debug.log*
 vite.config.mjs.timestamp-*.mjs
+
+# Python 编译缓存（开发时跑脚本产生；打包过滤规则同样排除 __pycache__/ 与 *.pyc）
+__pycache__/
+*.pyc
 
 # 发布脚本（../_push-github.sh）的上传状态文件，自动写入，不入库
 .gh-upload.json

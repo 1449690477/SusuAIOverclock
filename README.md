@@ -2,23 +2,25 @@
 
 # 苏苏 AI超频 · Susu AI Overclock
 
-**9 张平台卡片 · 6 个发布允许清单包 · 3 条旧载荷知情同意解锁**
+**9 张平台卡片 · 9 个内置载荷（6 个发布允许清单包 + 3 条旧载荷知情同意解锁）**
 
 Windows x64 本地隔离构建 · Electron 44.4.3 + React 18 + TypeScript 5 · 冰蓝瓷白界面
 
 ![Platform](https://img.shields.io/badge/platform-Windows%20x64-0078D4?style=flat-square)
 [![Electron](https://img.shields.io/badge/Electron-44.4.3-47848F?style=flat-square&logo=electron&logoColor=white)](https://www.electronjs.org/)
 [![React](https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react&logoColor=black)](https://react.dev/)
-[![Version](https://img.shields.io/badge/1.5.6-source%20ready%20%7C%20build%20pending-blue?style=flat-square)](./CHANGELOG.md)
+[![Version](https://img.shields.io/badge/1.5.7-isolated%20build%20ready-blue?style=flat-square)](./CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-MIT-97CA00?style=flat-square)](./LICENSE)
 
-**1.5.6 源码与策略已就绪（六发布包 + 三条旧载荷可勾选解锁 + Claude Code 破甲包），全套自动化测试通过；二进制产物必须在隔离构建环境产出 —— 本机预检按设计拒绝在受感染宿主上构建。**
+**1.5.7 便携产物已在隔离客体构建完成（九个载荷全部内置，其中三条旧载荷默认阻断、勾选「我知晓 同意」后解锁）。Linux Electron 44.4.3 下的 ASAR GUI 冒烟 176 项检查 0 失败；ClamAV 扫描 36,292 文件报告 46 个内容签名命中，不是 AV 放行。二进制绝不在受感染宿主上构建 —— 本机预检按设计拒绝。**
+
+**1.5.7 修复的是 1.5.6 的功能性缺陷：1.5.6 只把三条旧载荷的卡片和勾选框做出来了，却没有把载荷打进去，所以勾选同意后仍无法安装。现在三个包随包内置真实载荷，勾选后立即可装。**
 
 **1.5.5 的杀毒告警仍未解除：ClamAV 报告 29 个命中文件（安全案例文档 / 示例代码 / 词库的内容签名），不能称 AV 通过或无病毒。Windows 宿主仍受感染。**
 
-[1.5.5 本地交付 ZIP：SusuAIOverclock-1.5.5-portable-electron44.4.3-isolated.zip](./release/SusuAIOverclock-1.5.5-portable-electron44.4.3-isolated.zip)（1.5.6 产物待隔离环境构建）
+[1.5.7 交付 ZIP：SusuAIOverclock-1.5.7-portable-electron44.4.3-isolated.zip](./release/SusuAIOverclock-1.5.7-portable-electron44.4.3-isolated.zip)（231,724,148 字节 · `94ed18ca8100c088e7e857ddbc8b39cd29188ba4d40bf74b709d39350ed38913`）
 
-[1.5.5 安全报告](./docs/SECURITY-1.5.5.md) · [1.5.5 发布摘要](./release/1.5.5-SECURITY-REPORT.md) · [1.5.6 更新日志](./CHANGELOG.md)
+[1.5.5 安全报告](./docs/SECURITY-1.5.5.md) · [1.5.5 发布摘要](./release/1.5.5-SECURITY-REPORT.md) · [1.5.7 更新日志](./CHANGELOG.md) · [1.5.7 发布说明](./RELEASE-NOTES.md)
 
 </div>
 
@@ -49,7 +51,9 @@ Windows x64 本地隔离构建 · Electron 44.4.3 + React 18 + TypeScript 5 · �
 
 ## 这是什么
 
-一个 Windows 桌面工作台，在同一界面保留 **9 张平台卡片**。1.5.6 发布允许清单为 **6 个包**（`cursor`、`dsh`、`claude`、`opencode`、`workbuddy`、`workbuddy-ai`），另 **3 条旧载荷改为知情同意解锁**：未勾选「我知晓 同意」时行为与 1.5.5 强制隔离一致，勾选后其安装 / 卸载 / 备份 / 恢复 / 深度验证才解锁，撤销立即回到 fail-closed。
+一个 Windows 桌面工作台，在同一界面保留 **9 张平台卡片**。发布允许清单为 **6 个包**（`cursor`、`dsh`、`claude`、`opencode`、`workbuddy`、`workbuddy-ai`），另 **3 条旧载荷**（`codex`、`codex-panghu`、`anti-gravity`）**随包内置真实载荷但默认阻断**：未勾选「我知晓 同意」时行为与 1.5.5 强制隔离一致，勾选后其安装 / 卸载 / 备份 / 恢复 / 深度验证才解锁，撤销立即回到 fail-closed。
+
+> 1.5.5 曾把这三个包的二进制清出仓库，1.5.6 又只恢复了卡片与勾选框，因此「勾选同意后仍无法安装」——那是分发缺失，不是授权逻辑错误。1.5.7 把五个载荷内置回包内并修正来源检查，**分发范围（9 包）**与**发布许可（6 包）**从此是两条独立的轴，允许清单只限制默认放行，不再决定打不打包。载荷来源不是隔离区（那里的 blob 已被宿主预挂器重新包裹），而是一份钉死在源码里的**洁净字节基线** `scripts/payload-dedetaint.json`，归档时按内容校验、在内存里剥离 loader 后写入，宿主磁盘上不落任何 `.exe`。
 
 | 卡片 / 包 ID | 包版本记录 | 1.5.6 源码策略 |
 | :-- | :-- | :-- |
@@ -63,7 +67,7 @@ Windows x64 本地隔离构建 · Electron 44.4.3 + React 18 + TypeScript 5 · �
 | WorkBuddy AI 国际版（`workbuddy-ai`） | 懒人包 v1.3 | 已内嵌，非 AV 放行 |
 | 反重力（`anti-gravity`） | v3.2 | 隔离载荷：默认阻断，勾选「我知晓 同意」后解锁 |
 
-允许清单是构建范围限制，**不是对这 6 个包的安全认证**。3 个隔离载荷默认不部署：未勾选知情同意时其安装 / 卸载 / 备份 / 恢复 / 深度验证全部被策略层拒绝，勾选后解锁，撤销即恢复阻断。新增的 Claude 包沿用同一准入模型（脚本来源审查 + 目录白名单 + 四层验证），端到端注入 / 校验 / 回滚已在临时 HOME 实测通过（88 / 88）。普通 UI、词库与检测逻辑保留，并修复 Cursor / WorkBuddy AI 嵌套预期路径导致的 5 项错误缺失提示；客体 Linux GUI 已做有限实测，但未验证 Windows 原生 GUI、便携自解压或六包真实安装器。
+允许清单是**发布许可**限制，**不是对这 6 个包的安全认证**；分发范围是上面全部 9 包。3 条隔离载荷同样打完进包，但默认不部署：未勾选知情同意时其安装 / 卸载 / 备份 / 恢复 / 深度验证全部被策略层拒绝，勾选后解锁，撤销即恢复阻断。新增的 Claude 包沿用同一准入模型（脚本来源审查 + 目录白名单 + 四层验证），端到端注入 / 校验 / 回滚已在临时 HOME 实测通过（88 / 88）。普通 UI、词库与检测逻辑保留，并修复 Cursor / WorkBuddy AI 嵌套预期路径导致的 5 项错误缺失提示；客体 Linux GUI 已做有限实测，但未验证 Windows 原生 GUI、便携自解压或真实安装器。
 
 Codex 包使用已确认名称「冷咖啡石井 v10.4」，胖虎是另一分支。本地副本命中不代表已证明官方厂商或原作者恶意。国内 WorkBuddy 与国际 WorkBuddy AI 仍为两张卡片，配置根分别为 `~/.workbuddy`、`~/.workbuddy-ai`。Claude Code 卡配置根按 `CLAUDE_CONFIG_DIR` → `CLAUDE_HOME` → `~/.claude` 顺序解析，与包内 `install-claude.py` 完全一致。
 
@@ -135,7 +139,7 @@ Codex 包使用已确认名称「冷咖啡石井 v10.4」，胖虎是另一分�
 
 ### 4. 内嵌包发布范围
 
-1.5.6 计划的 `resources/packs` 包含上述 6 包；`codex`、`codex-panghu`、`anti-gravity` 默认阻断（用户勾选知情同意后才解锁，且不得沿用旧副本作为恢复源）。1.5.5 实际产物只含当时 5 包。真实 NSIS → 7z → ASAR 解包核对了 3066 个文件，版本与资源配置一致；这不是在 Windows 上启动便携 EXE 的测试。
+1.5.7 的 `resources/packs` 包含上述 **9 包**（`cursor`、`dsh`、`claude`、`opencode`、`workbuddy`、`workbuddy-ai`、`codex`、`codex-panghu`、`anti-gravity`）；`codex`、`codex-panghu`、`anti-gravity` 虽已内置，仍默认阻断（用户勾选知情同意后才解锁，且不得沿用旧副本作为恢复源）。打包过滤规则与源码目录的选材一致性由客体校验器的 parity 断言强制核对，避免再出现「卡片在、载荷不在」；**跨机传输的文件名与内容由归档内宿主写下的 `SOURCE-MANIFEST.json` 逐条复核**（客体解包器为 `scripts/isolated-build-unpack.py`，不用 `unzip` —— Ubuntu 的 Info-ZIP 6.00 会把 566 个中文条目名里的 454 个改写成 CP437 乱码）。1.5.5 实际产物只含当时 5 包。真实 NSIS → 7z → ASAR 解包核对了 3066 个文件，版本与资源配置一致；这不是在 Windows 上启动便携 EXE 的测试。
 
 原路径解析设计为 **imported > external > embedded**。来源徽章只是位置说明，导入或指定外部目录不等于通过安全审核。
 
@@ -147,7 +151,20 @@ Codex 包使用已确认名称「冷咖啡石井 v10.4」，胖虎是另一分�
 
 ## 本地交付与完整性
 
-[交付 ZIP](./release/SusuAIOverclock-1.5.5-portable-electron44.4.3-isolated.zip)仅作为本地归档交付，不是 GitHub Release，不表示允许绕过杀毒运行。
+### 1.5.7（当前）
+
+[交付 ZIP](./release/SusuAIOverclock-1.5.7-portable-electron44.4.3-isolated.zip) —— 未将 EXE 解压到宿主或在宿主运行，不表示允许绕过杀毒运行。
+
+| 对象 | 字节数 | SHA-256 |
+| :-- | --: | :-- |
+| `SusuAIOverclock-1.5.7-portable-electron44.4.3-isolated.zip` | 231724148 | `94ed18ca8100c088e7e857ddbc8b39cd29188ba4d40bf74b709d39350ed38913` |
+| ZIP 内 `SusuAIOverclock-1.5.7-portable.exe` | 146966201 | `be9b7951b43364109c4d6b9608dab612ebb731e3beb50325de29f4b06df259ab` |
+
+宿主以内置模块在内存中核对归档与 EXE 哈希，均匹配客体结果；共 1205 条目，0 个已知 IOC 命中、`problems: []`，**没有将 EXE 解压到宿主或运行它**（`executableExtractedToHost: false`）。[交付完整性报告](./release/1.5.7-DELIVERY-INTEGRITY.json)明确 `antivirusClearance=false`。
+
+### 1.5.5（历史）
+
+[交付 ZIP](./release/SusuAIOverclock-1.5.5-portable-electron44.4.3-isolated.zip)仅作为本地归档交付，不表示允许绕过杀毒运行。
 
 | 对象 | 字节数 | SHA-256 |
 | :-- | --: | :-- |
@@ -233,7 +250,8 @@ Codex 包使用已确认名称「冷咖啡石井 v10.4」，胖虎是另一分�
 | :-- | :-- | :-- |
 | SmartScreen / 未知发布者 / 杀毒拦截 | 原因需核查；本次已有真实封装载荷证据 | 停止运行，核对[报告](./docs/SECURITY-1.5.5.md)，保留防护，不添加排除项 |
 | 获取 1.5.5 | 最终 Electron 44.4.3 已本地构建，仅归档交付，AV 未放行 | 使用上方本地 ZIP / 报告核对身份，不在受感染宿主解压运行 |
-| 卡片仍在但隔离包不能安装 | 3 条部署路线被有意阻断 | 等待可信替换来源，不从旧缓存或外部目录绕回 |
+| 卡片仍在但隔离包不能安装 | 未勾选「我知晓 同意」时 3 条部署路线被有意阻断 | 在对应卡片勾选同意即可解锁；撤销即回阻断，不从旧缓存或外部目录绕回 |
+| 1.5.6 勾选同意后仍不能安装 | 该版只做了卡片与勾选框，载荷未打进包，`found=false` 使按钮永久置灰 | 升级 1.5.7：九个载荷随包内置，勾选后按钮立即可用 |
 | GUI 132 项通过是否等于 Windows 可用 | 使用官方 Linux Electron 加载最终 Windows ASAR；`app.isPackaged=false` | Windows 原生 GUI、自解压和五包安装器仍未验证 |
 | 零已知 IOC 命中为何还有报毒 | IOC 检查只覆盖已知封装；ClamAV 命中了保留的安全示例及整库内容 | 按报告区分范围，不据零 IOC 宣称 AV 通过，不绕过拦截 |
 | 删缓存是否等于清除感染 | 缓存不等于全部感染范围 | 本次未做系统清理，不以删除缓存或源码修复宣告宿主干净 |

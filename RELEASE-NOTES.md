@@ -1,3 +1,56 @@
+# v1.5.7 — 隔离包载荷内置（修复勾选同意后仍无法安装）
+
+> 状态：**源码、策略与隔离客体重建链路均已就绪**。本段以下全部内容为 v1.5.5 的历史发布记录，保留原文不改。
+
+## 修复了什么
+
+1.5.6 发布后收到用户反馈：**「反重力 / codex 冷咖啡 / codex 胖虎」三个包都勾选了「我知晓 同意」，安装按钮依然置灰、无法安装。**
+
+**三个独立成因，只修一个或两个都仍然装不上：**
+
+| # | 成因 | 修复 |
+| :-- | :-- | :-- |
+| 1 | 1.5.5 的清理把这三个包的二进制移出仓库，1.5.6 只补回了卡片与勾选框，载荷根本不在包里 → `resolvePackDir()` 返回 `{ dir: null, source: 'none' }` → `found=false` → `disabled` 永久为真、底部显示「未建立基线」 | 5 个载荷按**洁净字节基线**（`scripts/payload-dedetaint.json`，`entryPath` + `cleanSize` + `cleanSha256`）在归档时**按内容而非按路径**放行并内置进包；分发范围独立成轴（9 包），发布许可仍为 6 包 |
+| 2 | 即使载荷就位，`assertPackSourceAllowed` 会把**每一个后代目录名**拿去和隔离 id 匹配，而 `packed-packs/codex/breaker-tx/skills/packs/anti-gravity/` 是 codex 自己的技能目录 → 误判为反重力载荷 → `ERR_PACK_SOURCE_QUARANTINED` | 已获同意的包**自身树内**（depth ≥ 1）的目录名豁免；根目录与文件名仍全量检查，跨包复用依旧拒绝 |
+| 3 | 干净客体用 Ubuntu 的 **Info-ZIP `UnZip 6.00`** 解包源码，在 `LANG=C.UTF-8` 下把所有带 **bit-11 UTF-8 标记**的条目名改写成 CP437 字形 —— 566 个非 ASCII 条目里 **454 个**被改坏（`packed-packs/cursor/一键安装.bat` → `ф╕АщФохоЙшгЕ.bat`），导致 cursor 卡「缺 3 个预期文件」 | ①换成 `scripts/isolated-build-unpack.py`（`zipfile.ZipFile` 尊重 bit 11，拒绝符号链接/绝对路径/`..`，落盘逐文件复核 size+sha256）；②归档内写 `SOURCE-MANIFEST.json`（schemaVersion 2，**6,177 条**），客体校验器**第一件事**就是核对非 ASCII 名字与 `packed-packs/` 逐名一致；③客体准备阶段断言 CP437 残渣为 0，非 0 直接失败 |
+
+第 2、3 条都是回归阶段才暴露的：第 2 条测试当时没覆盖，第 3 条更隐蔽 —— **parity 断言比对的是「产物里的树」与「客体自己解出来的树」，两侧被同一把刀改成同样的乱码，于是互证一致**。教训已写进技能库：比对对象必须是**「传输前由宿主写下、客体够不着」**的东西（本版即 `SOURCE-MANIFEST.json`）。
+
+> 成因 1 为什么不再从隔离区恢复：隔离出来的那 5 个 blob 当时干净，但**同一目录随后被再次感染**。宿主有活体 PE 前置注入器（固定前置 2,592,798 字节 loader，每 60–120 秒轮询包裹新写入的 `.exe`），「恢复」等于把新注入的字节又请回产物。判据可机械复核：洁净文件 `size % 4096 == 30`，带 loader 的 `size == 原值 + 2592798` 且 `MOD 4096 != 30`。实测 `stripped` 全部为真，例如 `slo-runtime-hook.exe` 18,386,515 → **15,879,733**、`python.exe` 2,768,926 → **262,144**。
+
+## 分发范围 vs 发布许可
+
+| 轴 | 内容 | 作用 |
+| :-- | :-- | :-- |
+| 分发（`DISTRIBUTED_PACK_IDS`） | 9 包：6 发布 + `codex` / `codex-panghu` / `anti-gravity` | 决定**打不打包** |
+| 发布许可（`RELEASE_PACK_IDS`） | 6 包：`cursor` / `dsh` / `claude` / `opencode` / `workbuddy` / `workbuddy-ai` | 决定**是否默认放行** |
+| 知情同意（`CONSENTED_QUARANTINE_IDS`） | 运行时可变，存 `state.json.consents` | 决定隔离载荷**是否解锁** |
+
+内置 ≠ 放行：三个旧载荷随包分发，未勾选时安装 / 卸载 / 备份 / 恢复 / 深度验证全部在策略层拒绝，勾选即解锁，撤销即回阻断。
+
+## 构建范围
+
+`package.json` 的 `extraResources[0].filter` 由 15 条扩到 **19 条**（新增三个包目录 glob，再加 `!**/.gitkeep`），与 `DISTRIBUTED_PACK_IDS` 在构建预检里交叉断言。客体校验器新增 parity 断言：产物 `resources/packs` 必须**逐个文件等于**过滤规则从源码目录选出的集合 —— 这是防止「卡片在、载荷不在」再次发生的永久闸门。
+
+`!**/.gitkeep` 的来由：`builder-util` 的 `copyDir` 硬编码跳过 `.gitkeep`（而 `.gitignore` / `.github/` / `.travis.yml` / `.keep` / 零字节文件一律保留），过滤器必须显式声明才与产物同源。
+
+## 本版产物（已在隔离客体构建完成）
+
+| 对象 | 字节数 | SHA-256 |
+| :-- | --: | :-- |
+| `SusuAIOverclock-1.5.7-portable-electron44.4.3-isolated.zip` | 231724148 | `94ed18ca8100c088e7e857ddbc8b39cd29188ba4d40bf74b709d39350ed38913` |
+| ZIP 内 `SusuAIOverclock-1.5.7-portable.exe` | 146966201 | `be9b7951b43364109c4d6b9608dab612ebb731e3beb50325de29f4b06df259ab` |
+
+宿主以内置模块在内存核验：1205 个条目，归档与 EXE 哈希均匹配客体，`problems: []`，**未将 EXE 解压到宿主或在宿主运行**（`executableExtractedToHost: false`）。详见[交付完整性报告](./release/1.5.7-DELIVERY-INTEGRITY.json)。
+
+客体链路（157e 源包）：解包 **6177/6177 零问题** → `verify tools` → `verify artifact`（产物 sha 与改动前一致）→ ClamAV **36,292 文件 / 2.24 GiB / 46 命中**（全部落在同一组内容签名，`unexpectedFindings: []`）→ `proof.py`（pack diff 全空、5 个 embedded 载荷全对）→ Linux ASAR GUI **176 项检查 0 失败** → `finalize` 出具 `PASS_LINUX_ASAR_GUI_ONLY`。
+
+## 尚未验证
+
+**Windows 原生 GUI、便携 EXE 自解压、Windows 平台探测与九个载荷的真实安装器仍未实机验证**。已验证的是 Linux Electron 44.4.3 下的 ASAR GUI 冒烟（`linux-no-sandbox` 模式，176 项），不等于 Windows 原生运行。本段不构成 AV 放行或安全认证。
+
+---
+
 # v1.5.5 / Electron 44.4.3 — 供应链污染处置与隔离重建
 
 ## 关于上一个版本被杀毒软件告警

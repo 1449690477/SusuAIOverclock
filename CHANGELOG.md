@@ -2,9 +2,93 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-> **当前状态（2026-09-21）：1.5.6 源码与策略已就绪（六发布包 + 三条旧载荷知情同意解锁 + Claude Code 破甲包），全套自动化测试通过；二进制产物需在隔离构建环境产出。** 1.5.5 的隔离与替换结论继续有效：ClamAV 对 1.5.5 归档报告的 29 个命中是安全案例文档 / 示例代码 / 词库的**内容签名**，不是此前的 `R.exe` / `N.exe` 投放器，但也不构成 AV 放行。Windows 宿主仍受感染，51 个项目样本继续隔离。1.5.4 及更早条目只作历史记录，旧安全保证失效，不要恢复或运行旧样本。详见 [SECURITY-1.5.5](./docs/SECURITY-1.5.5.md)。
+> **当前状态（2026-09-21）：1.5.7 已在隔离客体产出可用的便携 EXE，并已确认「勾选同意后真的能装」。** 修复 1.5.6 的**分发缺口**：三个隔离包虽已可勾选知情同意，但从未被构建进产物，导致勾选后仍「无法安装」。1.5.7 把 `codex` / `codex-panghu` / `anti-gravity` 三棵目录与 5 个可执行载荷一并内置回包，**分发不等于放行** —— `RELEASE_PACK_IDS` 仍是部署许可名单，未勾选时行为与硬隔离完全一致。产物 `SusuAIOverclock-1.5.7-portable.exe`，146,966,201 字节，SHA-256 `be9b7951b43364109c4d6b9608dab612ebb731e3beb50325de29f4b06df259ab`；交付归档 `SusuAIOverclock-1.5.7-portable-electron44.4.3-isolated.zip`，231,724,148 字节，SHA-256 `94ed18ca8100c088e7e857ddbc8b39cd29188ba4d40bf74b709d39350ed38913`。GUI 冒烟 **176 checks / 0 fail**（`PASS_LINUX_ASAR_GUI_ONLY`），含「未同意 → 阻断、同意 → 三个按钮真的可点、撤销 → 恢复阻断」的完整往返。1.5.5 的隔离与替换结论继续有效：ClamAV 对 1.5.5 归档报告的 29 个命中是安全案例文档 / 示例代码 / 词库的**内容签名**，不是此前的 `R.exe` / `N.exe` 投放器，但也不构成 AV 放行。Windows 宿主仍受感染，51 个项目样本继续隔离。1.5.4 及更早条目只作历史记录，旧安全保证失效，不要恢复或运行旧样本。详见 [SECURITY-1.5.5](./docs/SECURITY-1.5.5.md)。
 
 ---
+
+## [1.5.7] — 2026-09-21 · 隔离包载荷内置 + 中文文件名修复（修复勾选同意后仍无法安装）
+
+### 修复
+
+- **勾选「我知晓 同意」后仍然无法安装。** 根因是把两件不同的事混成了一个名单：`RELEASE_PACK_IDS` 是**部署**许可名单，`build.extraResources` 的 `filter` 是**分发**名单，而过滤器里只有六个发布包。
+  - 后果链：同意登记后 `getPackBlockReason()` 正确返回 `null`（所以徽标显示「隔离已解锁」），但产物里根本没有那三棵目录；`resolvePackDir()` 依次尝试 已导入 → 外部根目录 → 内嵌，三处全部落空，返回 `{ dir: null, source: 'none' }`。
+  - `main.cjs::scanPack` 因此给出 `found = false`，而 `PackCard` 的按钮是 `disabled={busy || blockedReason || !pack.found || !plan.hasInstall}` —— 安装 / 卸载 / 深度验证永久灰掉，页脚显示「未建立基线」。
+  - 交叉验证：1.5.4 产物 119,691,442 字节、1.5.5 为 114,047,016 字节、1.5.6 为 114,069,111 字节，而三包裸 LZMA 压缩后约 33 MB —— 任何历史版本都不可能装得下它们，即该功能在**载荷层面**从未可用过。
+- **载荷补进去之后 Codex 仍然失败：来源检查把包自己的目录当成了别的载荷。** 这是补齐分发后的**第二个独立阻塞**，测试当时没覆盖，靠逐个直接调用安全检查函数才暴露。
+  - `assertPackSourceAllowed` 会把**每一个后代目录名**都拿去和隔离包 id 比对，而 `packed-packs/codex/breaker-tx/skills/packs/anti-gravity/` 是 Codex toolkit **自己的技能目录**，于是命中「反重力」签名并抛 `ERR_PACK_SOURCE_QUARANTINED` —— 报的还是**反重力**的错误文案，误导性极强。同意解锁了策略门，来源扫描却仍然拒绝这个包自己的树。
+  - 修法：已获同意的包，**自身树内部（`depth >= 1`）的目录名豁免**；根目录与**所有文件名**仍全量检查，因此「用甲包指向乙包的载荷目录」「用发布包指向隔离文件」这类跨包复用依旧被拒（`electron/pack-source-policy.cjs`）。
+  - 已加回归测试 `consent unlocks a pack's own tree and never another pack's tree` 固定该不变量。
+- **parity 断言自己先把检查放空：`.gitkeep` 被 builder 无条件丢掉。** 分发轴补齐后新加的「宿主过滤规则选出的集合 == 产物 `resources/packs/` 集合」断言一开始就红，根因在 `builder-util` 的 `copyDir`：它硬编码跳过 `.gitkeep`，但 `.gitignore` / `.github/` / `.travis.yml` / `.keep` / 零字节文件**一律保留**。
+  - 这不是本项目的 bug，是 electron-builder 的既定行为，所以修法是在过滤规则里**显式声明** `!**/.gitkeep`，让两侧同源 —— 过滤规则由 18 条变 19 条，`packed-packs/` 侧条目数随之收敛。
+
+### 新增
+
+- **分发轴独立出来**：`electron/security-policy.cjs` 与 `scripts/preflight-security.cjs` 新增 `DISTRIBUTED_PACK_IDS = RELEASE_PACK_IDS + QUARANTINED_PACKS`（九包），构建预检断言两侧一致，`RELEASE_RESOURCE_FILTER` 与 `package.json` 的 `extraResources[0].filter` 一同**由 15 条扩到 19 条**（六发布包 + 三隔离包 + `NOTICE.txt` + 8 条排除规则 + `!**/.gitkeep`）。
+- **隔离载荷安全传递**：1.5.5 卫生隔离把 5 个可执行文件移出了三棵目录，只补目录仍是空壳。载荷现在**不从隔离区恢复**，而是从 `.exe` 在宿主之外的**洁净字节基线**直接写进源包 ZIP（`scripts/payload-dedetaint.json`）。
+  - 为什么放弃「从 `.security-quarantine-1.5.5/` 的 `summary.json` 恢复」：宿主有活体 PE 前置注入器，按扩展名轮询投毒。1.5.5 隔离出来的那 5 个 blob 当时是干净的，但**同一个目录在这之后被再次感染** —— 恢复出来的字节等于把新注入的 2,592,798 字节 loader 又请回产物里。判据是可机械复核的：干净文件的 `size % 4096 == 30`（VC 链接器节对齐留白），带 loader 的则是 `size == 原值 + 2592798` 且 `MOD 4096 != 30`。
+  - 现方案：`payload-dedetaint.json` 逐条钉死 5 个载荷的 `entryPath` / `cleanSize` / `cleanSha256`，导出时**按内容而非按路径**放行 —— 只有字节的 sha256 命中基线才写入 ZIP；`allPass` 不为真、条目数不等于 5、`entryPath` 有重复、缺少 loader 文本段签名（`TEXT_OFFSET 0x1000` / `TEXT_LENGTH 0x7f000`，sha256 `dd25f3ed…c9932`）任一条件不成立即**拒绝导出**。
+  - 宿主磁盘上这些文件始终是 `*.quarantined`，`.exe` 只出现在 ZIP 条目名里：绝不能在宿主落任何 `.exe`。
+  - 5 个载荷：`anti-gravity/materials/proxy/bin/antigravity-oauth-proxy.exe`、`codex/materials/slo-runtime/eni-solo/sha256-r2-mixed-pinned-2b50f93a8d7716b5/slo-runtime-hook.exe`、`codex-panghu/keysmith/python/python.exe`、`codex-panghu/keysmith/python/Lib/venv/scripts/nt/python.exe`、`.../pythonw.exe`。实测 `stripped` 全部为真，例如 `slo-runtime-hook.exe` 由 `18,386,515` 回到 `15,879,733` 字节、`python.exe` 由 `2,768,926` 回到 `262,144` 字节。
+  - `SOURCE-MANIFEST.json` 的 `restoredFromQuarantine` 字段**恒为空数组**（schemaVersion 2），并由客体侧断言「该已退役机制不得复活」。
+  - 三棵隔离目录内允许 `.exe/.dll/.pyd/.node` 与 MZ 内容，**前缀之外一律照旧抛错**；`codex-panghu` 的 ensurepip 内置 wheel（`pip-25.0.1-py3-none-any.whl`）随包保留，否则随包解释器无法自举 pip。
+- **端到端回归断言**：`isolated-build-verify.cjs` 在客体侧解包真实 EXE 后，逐条断言这 5 个载荷存在于 `resources/packs/` 且首两字节为 `MZ`，并把记录写进 `reports/artifact-result.json` 的 `quarantinedPayload` 字段；`isolated-gui-smoke.cjs` 断言三张隔离卡在**未勾选**时仍是 `source: 'quarantined'` / `found: false` / 按钮全灰，在**勾选后** `found: true`、`source: 'embedded'`、安装与深度验证按钮可点，撤销后再次灰掉。
+- **选材一致性闸门（防止「卡片在、载荷不在」复发）**：`isolated-build-verify.cjs` 新增 parity 断言 —— 产物 `resources/packs/` 下的文件集合必须**逐个文件等于** `build.extraResources[0].filter` 从 `packed-packs/` 选出的集合。校验器内置最小 glob 引擎 `filterMatcher`，遇到不认识的 glob 模式**抛错而不是静默不匹配**（后者会让断言变成永远为真的空检查）。输出落 `reports/pack-filter-parity.json`。
+  - 配套修掉导出脚本的作用域缺陷：`node_modules` / `release` 此前是**任意层级**排除，而 electron-builder 的 `!**/…` 只排除同级之外的模式 —— 结果是 `packed-packs/opencode/node_modules`（1 MB）与 `packed-packs/codex-panghu/keysmith/release` 被导出脚本丢弃、却被 builder 保留，两侧必然不等。现拆成 `$omitAtRoot`（仅根）与 `$omitAnywhere`（`backups` / `evidence` / `__pycache__` / `_quarantine` / `_deprecated-omen-bridge`）。修复后重跑：`opencode` 由 12 项增至 102 项、`codex-panghu` 由 797 增至 799 项，与 builder 侧一致。
+- **传输完整性闸门（1.5.7 的第三颗雷，也是唯一一颗「两边互证、谁都没错」的雷）**：客体用 `unzip` 解包源码时，Ubuntu 的 Info-ZIP **UnZip 6.00** 在 `LANG=C.UTF-8` 下会把**所有带 bit-11 UTF-8 标记的条目名**改写成 OEM/CP437 字形 —— `packed-packs/cursor/一键安装.bat` 变成 `packed-packs/cursor/ф╕АщФохоЙшгЕ.bat`。1.5.7 归档里有 **566 个非 ASCII 条目、全部带 bit-11**，其中 **454 个被改坏**。
+  - 为什么此前每一道闸门都放行：parity 断言比的是「产物 `resources/packs/`」与「**客体自己解出来的树**」—— 两侧被同一把刀改成同样的乱码，于是**互证一致**。凡是被 `unzip` 写过的名字，比对双方都错得一模一样。
+  - 判据必须换成**「传输前由宿主写下、客体够不着」的东西**：导出时把每个条目的 `path` / `size` / `sha256` 写进归档内的 `SOURCE-MANIFEST.json`（schemaVersion 2，本包 6,177 条）。
+  - 三层修法：①**换解包器** —— `scripts/isolated-build-unpack.py` 用 `zipfile.ZipFile`（尊重 bit 11）解包，拒绝符号链接 / 绝对路径 / `..`，落盘前逐文件复核 `size` + `sha256`，并断言归档内副本与自己逐字节相同（sha256 `30fac4ae…`）、非 ASCII 路径 ≥ 500；②**加传输闸门** —— `isolated-build-verify.cjs` 的 `tools()` 最先跑 `SOURCE-MANIFEST.json` 核对，非 ASCII 名字逐个 `existsSync` + size/hash 复核，并断言 `packed-packs/` 的宿主清单与客体解包树**逐名一致**，输出 `reports/source-transfer-integrity.json`；③**客体硬断言** —— `guest_prepare157.sh` 对 `一键安装.bat` 等四个中文名做点名抽查，并用 `find -name '*╕*' -o -name '*╣*'` 断言 CP437 残渣为 **0**，非 0 直接 `exit 1`。
+  - 回归测试 `the source archive is extracted by a UTF-8 safe unpacker, not \`unzip\`` 把这四处断言钉死；`_v156_build/guest_setup.sh`（1.5.6 历史流程）里残留的 `unzip` 也已一并替换为 `zipfile`。
+  - 同一缺陷存在于 1.5.5 / 1.5.6 的产物中，两个版本的归档与交付不予追溯重发。
+
+### 变更
+
+- 隔离文案改为与「知情同意」语义一致：`QUARANTINED_PACKS` 说明从「禁止安装」改为「默认阻断…勾选知情可解锁」，`RESTORE_SOURCE_WARNING` 收敛为「旧备份、外部目录、导入副本和历史内嵌包均不作为该载荷的可信恢复源。隔离不代表用户目录已清理。」`getPackBlockReason()` / `assertPackAllowed()` / `getDeployPlanInfo()` 语义未动。
+- `packed-packs/NOTICE.txt` 从「六个工具包」更正为九个，并写明三个隔离载荷随包分发不等于部署许可。
+- 版本号全链路对齐 1.5.7（`package.json` / `package-lock.json` / 构建预检硬断言 / 隔离构建导出与校验 / 交付归档校验 / 安全证据 / GUI 冒烟默认值）。
+
+### 验证
+
+**宿主侧（源码与策略）**
+
+- `DANGO_TEST_REAL_PACKS=1 node --test tests/security-*.cjs`：**43 通过 / 0 失败 / 0 跳过**。
+- `npm test`：**116 / 116** 通过。
+- `tsc --noEmit`：无错误；`vite build`：1592 模块，产物 245.03 kB JS + 41.85 kB CSS。
+- 构建预检（`--json`）：`ok: false` 但 **`errors: []`** —— 结构断言全过（版本三方一致、Electron 44.4.3 钉死、**19 条**过滤规则与共享清单逐条精确匹配、三轴常量一致）；findings 全部是已知宿主感染文件（`%TEMP%\R.exe`、`%TEMP%\HD_X.dat`，以及被前置器盖戳的 `7za.exe` / `app-builder.exe`）。**脚本明确声明无 bypass 开关。**
+- `scripts/preflight-security.cjs --scan` 逐包复验：`codex` / `codex-panghu` / `anti-gravity` 合计 58 个二进制，全部 `known-ioc-not-detected`，0 命中 0 错误。
+- 隔离包来源检查正反用例：三个包获得同意后全部通过；`codex` → 反重力根、`codex` → 胖虎根、`workbuddy` → 胖虎旧载荷文件、`workbuddy` → codex 树、`cursor` → 胖虎树，全部按预期抛错。
+- 源包导出 `susu157e-source.zip`：**343,448,152 字节 / 6,177 文件 / `payloadBinaries 63` / `dedetainted 5` / `restoredFromQuarantine []`**，SHA-256 `c4ee204daa7b7b7d8421eaa9d8dbdec070bef1f81c9fe1d16c7bf989627f397c`；566 个非 ASCII 条目全部带 bit-11。与前一版 `susu157c-source.zip` 的清单差异**只有 `scripts/isolated-gui-smoke.cjs` 一个文件**（探针修复，见下），`package.json#build.files` 白名单不含 `scripts/`，故产物字节不变。
+- `isolated-build-export.ps1` 在 Windows PowerShell 5.1 下解析 0 错误。
+
+**隔离客体侧（Ubuntu 6.8.0-139 · Node v22.23.2 · Electron 44.4.3 · electron-builder 25.1.8）**
+
+- 传输闸门：`reports/source-unpack.json` 与 `reports/source-transfer-integrity.json` —— `manifestEntries 6177 == archiveEntries 6177`，`missing` / `extra` / `sizeMismatch` / `hashMismatch` **全为 0**，`nonAsciiEntries 566`，解包器 sha256 `30fac4ae…`；客体 `find -name '*╕*' -o -name '*╣*' | wc -l` == **0**。
+- 构建阶段：`PHASE=build EXIT=0`；预检 `findings: 0 / errors: 0`。
+- 产物校验 `isolated-build-verify.cjs artifact`：**ALL PASSED**。
+
+  | 项 | 值 |
+  | :-- | :-- |
+  | 产物 | `SusuAIOverclock-1.5.7-portable.exe` |
+  | 字节 | **146,966,201** |
+  | SHA-256 | `be9b7951b43364109c4d6b9608dab612ebb731e3beb50325de29f4b06df259ab` |
+  | 包目录 | 9 个（6 发布 + 3 隔离） |
+  | 载荷 | 5 个全部 `MZ`，sha256 逐个等于洁净基线 |
+  | 二进制扫描 | `scannedBinaries 77` / `knownIocFindings 0` / `inspectionErrors 0` |
+
+- parity 断言：产物 `resources/packs/` 与过滤规则（19 条）从 `packed-packs/` 选出的集合**逐个文件相等**，`resources/packs/cursor/一键安装.bat` 按字面名在场。
+- AV（ClamAV 1.5.3 / 28129，全量 `--allmatch`）：`PHASE=av EXIT=0`，扫描 **36,292 文件 / 7524 目录 / 2.24 GiB**，46 处命中全部落在三组**内容签名**上 —— `Win.Exploit.CVE_2015_6096-1` ×20、`Img.Phishing.SvgJsPhishing-10044283-0` ×36、`Html.Downloader.Satan-6249582-1` ×4（最后一个是 `library.json` 整集合的关键词共现，不是可识别的独立下载器条目）。分类器 `unexpectedFindings: []`，**不声明 AV 通过**。
+- **GUI 冒烟（`linux-no-sandbox`）：176 checks / 0 fail / `status=PASS`；`finalize` = `PASS_LINUX_ASAR_GUI_ONLY`**，`checksPassed 176`、`screenshotsSuccessfulRun 21`、`quarantineRejected 9`、`rendererErrors []`、`execAuditUnexpected []`、`portableArtifactSHA256` 与产物一致。老板报障的两条路径被当场实证：
+
+  | 断言 | 结果 |
+  | :-- | :-- |
+  | 未勾选：三张隔离卡 `source: quarantined` / `found: false` / 按钮全灰，且真实 IPC 拒绝 `deploy` / `verifyDeep`（`ERR_PACK_QUARANTINED`） | 通过 |
+  | 勾选：`source: embedded` / `found: true` / **`installEnabled` `uninstallEnabled` `monitorEnabled` 全为 `true`** | 通过 |
+  | 撤销：徽标回「已隔离 · 只读」、阻断提示重现、三个按钮重新变灰、登记表落盘为空且不含载荷名 | 通过 |
+
+  - 附带发现并修掉的是**探针自身**的两个缺陷，不是产物缺陷：① `page.waitForFunction()` 只要带第二个参数就会在页面里 `eval()` 重建谓词，产物 CSP 为 `script-src 'self'`（无 `unsafe-eval`），于是抛 `EvalError`，而调用侧的 `.then(() => true, () => false)` 把它**吞成 `false`**，报告里就长成一条「产品功能失败」；② `locator.check()` 对 React 受控 checkbox 会在 `window.dango.setConsent()` 异步往返完成前重试点击。现改为 Node 侧 `poll()`（谓词走 `page.evaluate`，CDP 不经 CSP）+ 单次 `click()` 后轮询渲染结果。
+- **交付归档**：`SusuAIOverclock-1.5.7-portable-electron44.4.3-isolated.zip`，**231,724,148 字节**，SHA-256 `94ed18ca8100c088e7e857ddbc8b39cd29188ba4d40bf74b709d39350ed38913`，内含 1205 个条目（根为便携 EXE + 全部客体证据 + 复现脚本）。宿主侧复核 `problems: []`。
+- 产物不在宿主打包：宿主预检按设计拒绝，`No bypass flag exists`；二进制全程只存在于隔离客体与宿主内存中的归档读取里（`executableExtractedToHost: false` / `executableRunOnHost: false`）。
+
 
 ## [1.5.6] — 2026-09-21 · 隔离包知情同意解锁 + Claude Code 破甲包
 
