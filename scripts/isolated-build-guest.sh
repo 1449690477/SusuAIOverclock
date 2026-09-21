@@ -3,8 +3,8 @@
 # PATH=/usr/bin:/bin LANG=C.UTF-8 bash isolated-build-guest.sh deps|build|av
 set -Eeuo pipefail
 umask 022
-BASE=/home/builder/susu155-final44
-BUILD_ID=susu155-electron44.4.3-final-20260920
+BASE=${ISOLATED_BUILD_BASE:-/home/builder/susu155-final44}
+BUILD_ID=${ISOLATED_BUILD_ID:-susu155-electron44.4.3-final-20260920}
 PROJECT=$BASE/project
 PHASE=${1:?deps or build or av}
 test "$(id -un)" = builder
@@ -16,6 +16,10 @@ trap 'rc=$?; printf "PHASE=%s EXIT=%s UTC=%s\n" "$PHASE" "$rc" "$(date -u +%FT%T
 printf 'PHASE=%s START=%s\n' "$PHASE" "$(date -u +%FT%TZ)"
 printf 'BUILD_ID=%s ELECTRON=44.4.3 APP_VERSION=1.5.6 GUI=pending-new-build\n' "$BUILD_ID"
 export PATH="$BASE/toolchain/node-v22.23.2-linux-x64/bin:/usr/bin:/bin"
+# Evidence destination, download cache and expected PE version must all follow the
+# tree being built; the harness defaults keep the original 1.5.5 values.
+export ISOLATED_BUILD_BASE="$BASE" ISOLATED_BUILD_ID="$BUILD_ID" ISOLATED_BUILD_DOWNLOADS="$BASE/downloads"
+export EXPECTED_APP_VERSION="$(node -p "require('$PROJECT/package.json').version" 2>/dev/null || printf 1.5.6)"
 export ELECTRON_BUILDER_CACHE="$BASE/cache/builder"
 export npm_config_cache="$BASE/cache/npm"
 mkdir -p "$BASE/config"

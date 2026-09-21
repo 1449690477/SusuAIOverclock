@@ -2,17 +2,22 @@
 """Read-only proof of the complete official Windows runtime in the actual app."""
 import hashlib
 import json
+import os
 import pathlib
 import pefile
 import sys
 import zipfile
 
-BASE = pathlib.Path('/home/builder/susu155-final44')
+BASE = pathlib.Path(os.environ.get('ISOLATED_BUILD_BASE', '/home/builder/susu155-final44'))
+BUILD_ID = os.environ.get('ISOLATED_BUILD_ID', 'susu155-electron44.4.3-final-20260920')
+# Fetch material (official archives + SHASUMS) is a download cache, not build
+# output; it may be shared between releases as long as the sha256 pin below holds.
+DOWNLOADS = pathlib.Path(os.environ.get('ISOLATED_BUILD_DOWNLOADS', str(BASE / 'downloads')))
 project = BASE / 'project'
 app = pathlib.Path(sys.argv[1])
 pkg = json.loads((project / 'package.json').read_text())
 sha = lambda data: hashlib.sha256(data).hexdigest()
-archive = BASE / 'downloads/electron-v44.4.3-win32-x64.zip'
+archive = DOWNLOADS / 'electron-v44.4.3-win32-x64.zip'
 assert sha(archive.read_bytes()) == '790a355b684d5c7cc8dc3cdd8c4cca7c4b2d054685427c7554a956879a82e70b'
 stock = project / 'node_modules/electron/dist/electron.exe'
 assert sha(stock.read_bytes()) == 'bf0fe749904ca9f713ccfb2427c519fa39d0bbd0337ba411ba08785802e8d548'
@@ -39,7 +44,7 @@ source = (project / 'electron/pack-source-policy.cjs').read_text()
 assert 'function missingExpectedEntries(' in source
 for filename in ['core.cjs', 'main.cjs']:
     assert 'missingExpectedEntries(' in (project / 'electron' / filename).read_text()
-report = {'buildId': 'susu155-electron44.4.3-final-20260920', 'electronVersion': '44.4.3',
+report = {'buildId': BUILD_ID, 'electronVersion': '44.4.3',
           'applicationVersion': pkg['version'], 'officialStockExeSha256': sha(stock.read_bytes()),
           'applicationExeSha256': sha(renamed.read_bytes()), 'officialCodeSectionsPreserved': True,
           'runtimeTextSections': text(stock_pe), 'runtimeFiles': files,

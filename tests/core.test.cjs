@@ -1395,3 +1395,40 @@ test('内嵌 WorkBuddy AI 国际版包是 v1.3 且必备文件齐', () => {
   assert.match(inst, /-WBHomePath/);
   assert.match(inst, /\.workbuddy-ai/);
 });
+
+// 隔离构建 harness 曾在三处把「上一版的证据目录」和「上一版的期望版本」钉死在源码里：
+// 证据被写进上一版的 reports/ 后又撞上 fresh-destination 守卫，PE 版本断言直接挡住新版打包。
+// 这里钉死「必须走环境变量」的契约，防止再次漂移。
+// 一版专用的一次性工具（isolated-build-prepare44.py / -proof.py / -bundle.py / -retry.py /
+// -classify-av.py / -av-baseline.py）仍保留 1.5.5 常量，属历史归档，不在本契约内。
+test('隔离构建 harness 的证据目录与期望版本必须走环境变量', () => {
+  const dir = path.join(__dirname, '..', 'scripts');
+  const read = (name) => fs.readFileSync(path.join(dir, name), 'utf-8');
+
+  for (const [name, marker] of [
+    ['isolated-build-verify.cjs', /process\.env\.ISOLATED_BUILD_BASE/],
+    ['isolated-build-runtime-proof.py', /os\.environ\.get\('ISOLATED_BUILD_BASE'/],
+    ['isolated-build-guest.sh', /ISOLATED_BUILD_BASE:-/]
+  ]) {
+    const src = read(name);
+    assert.match(src, marker, `${name} 必须支持 ISOLATED_BUILD_BASE 覆盖`);
+    for (const line of src.split(/\r?\n/)) {
+      if (!line.includes('/home/builder/')) continue;
+      assert.ok(
+        /ISOLATED_BUILD_(BASE|DOWNLOADS)/.test(line),
+        `${name} 出现未经环境变量覆盖的 guest 路径: ${line.trim()}`
+      );
+    }
+  }
+
+  assert.doesNotMatch(read('isolated-build-verify.cjs'), /const base = '/, 'base 不得是裸字面量');
+  assert.doesNotMatch(read('isolated-build-verify.cjs'), /const buildId = '/, 'buildId 不得是裸字面量');
+
+  const pe = read('isolated-build-pe.py');
+  assert.match(pe, /os\.environ\.get\('EXPECTED_APP_VERSION'/, 'PE 期望版本必须来自 EXPECTED_APP_VERSION');
+  assert.doesNotMatch(pe, /==\s*\[1,\s*5,\s*\d+,\s*0\]/, 'PE 版本不得钉死在源码里');
+
+  const runtime = read('isolated-build-runtime-proof.py');
+  assert.match(runtime, /os\.environ\.get\('ISOLATED_BUILD_DOWNLOADS'/, '下载缓存目录必须可覆盖');
+  assert.doesNotMatch(runtime, /'buildId': 'susu1/, 'runtime-proof 的 buildId 不得钉死');
+});

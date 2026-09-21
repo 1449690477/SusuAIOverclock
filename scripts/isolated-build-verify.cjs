@@ -8,8 +8,11 @@ const { spawnSync } = require('node:child_process');
 const { createRequire } = require('node:module');
 const scanner = require('./preflight-security.cjs');
 const root = path.resolve(__dirname, '..');
-const base = '/home/builder/susu155-final44';
-const buildId = 'susu155-electron44.4.3-final-20260920';
+// Evidence destination must follow the tree being verified. A hardcoded path made
+// every later release write its reports into the previous release's evidence
+// directory and then trip the fresh-destination guard in artifact().
+const base = process.env.ISOLATED_BUILD_BASE || '/home/builder/susu155-final44';
+const buildId = process.env.ISOLATED_BUILD_ID || 'susu155-electron44.4.3-final-20260920';
 const reports = path.join(base, 'reports');
 const pins = { electron: '44.4.3', 'electron-builder': '25.1.8', 'app-builder-bin': '5.0.0-alpha.10', '7zip-bin': '5.2.0', esbuild: '0.21.5' };
 const sha = file => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
