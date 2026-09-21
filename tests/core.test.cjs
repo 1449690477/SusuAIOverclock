@@ -7,6 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const core = require('../electron/core.cjs');
+const policy = require('../electron/security-policy.cjs');
 
 function tmpdir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'dango-test-'));
@@ -144,9 +145,11 @@ test('renderReport 输出包含全部包且不虚构安装状态', () => {
 });
 
 test('受管包定义齐全且 ID 唯一', () => {
-  assert.strictEqual(core.PACKS.length, 8);
-  assert.strictEqual(new Set(core.PACK_IDS).size, 8);
+  // 六个发布包（claude 为 v1.5.6 新增）+ 三个隔离包
+  assert.strictEqual(core.PACKS.length, 9);
+  assert.strictEqual(new Set(core.PACK_IDS).size, 9);
   assert.ok(core.PACK_IDS.includes('workbuddy-ai'));
+  assert.ok(core.PACK_IDS.includes('claude'));
   for (const p of core.PACKS) {
     assert.ok(p.id && p.name && p.folder && p.accent, `${p.id} 缺字段`);
     assert.ok(Array.isArray(p.expected) && p.expected.length, `${p.id} 缺 expected`);
@@ -165,20 +168,27 @@ test('codex 双破甲分支并存且互斥语义在 note 里写明', () => {
   assert.strictEqual(shiyi.target, panghu.target);
   assert.notStrictEqual(shiyi.folder, panghu.folder);
   assert.strictEqual(panghu.folder, 'codex-panghu');
-  // 互斥提示必须写进两个包的 note，用户在 UI 上才看得到
-  assert.ok(/胖虎|互斥/.test(shiyi.note), 'codex.note 未提示与胖虎互斥');
-  assert.ok(/互斥|冷咖啡石井/.test(panghu.note), 'codex-panghu.note 未提示与石井互斥');
+  // v1.5.5 起两个 Codex 分支同时进了隔离名单，note 改为隔离原因文案；
+  // 互斥语义仍然成立：同目标、不同 folder、不同图标，且两者都不能直接部署。
+  assert.strictEqual(shiyi.note, policy.QUARANTINED_PACKS.codex);
+  assert.strictEqual(panghu.note, policy.QUARANTINED_PACKS['codex-panghu']);
+  assert.strictEqual(core.isConsentPack('codex'), true);
+  assert.strictEqual(core.isConsentPack('codex-panghu'), true);
   // 图标必须不同，两张 Codex 卡片在视觉上可区分
   assert.notStrictEqual(core.BRAND_ICONS.codex, core.BRAND_ICONS['codex-panghu']);
 });
 
 test('codex-panghu 部署计划走 keysmith install.ps1 且 evidence 是注入特征', () => {
+  // v1.5.6：可执行定义移入 LEGACY_QUARANTINE_PLANS，只有登记知情同意后才可达；
+  // DEPLOY_PLANS 里保留同 id 的空计划（install:null）与 evidence。
+  const legacy = core.LEGACY_QUARANTINE_PLANS['codex-panghu'];
   const plan = core.DEPLOY_PLANS['codex-panghu'];
-  assert.strictEqual(plan.install.file, 'install.ps1');
-  assert.strictEqual(plan.install.kind, 'ps1');
-  assert.ok(plan.install.args.includes('install'), 'install 缺 -Action install');
-  assert.strictEqual(plan.uninstall.file, 'install.ps1');
-  assert.ok(plan.uninstall.args.includes('uninstall'), 'uninstall 缺 -Action uninstall');
+  assert.strictEqual(plan.install, null, '未登记同意时必须是 fail-closed 空计划');
+  assert.strictEqual(legacy.install.file, 'install.ps1');
+  assert.strictEqual(legacy.install.kind, 'ps1');
+  assert.ok(legacy.install.args.includes('install'), 'install 缺 -Action install');
+  assert.strictEqual(legacy.uninstall.file, 'install.ps1');
+  assert.ok(legacy.uninstall.args.includes('uninstall'), 'uninstall 缺 -Action uninstall');
   // evidence 必须覆盖 keysmith 的三个落地特征：config 指向 / 根指令 / 部署清单
   const labels = plan.evidence.map((e) => e.label).join('|');
   assert.ok(/model_instructions_file/.test(labels), 'evidence 缺 model_instructions_file 检查');
@@ -303,13 +313,20 @@ test('expandEnv 环境变量替换', () => {
   assert.strictEqual(core.expandEnv('regular/path/without/env'), 'regular/path/without/env');
 });
 
-test('DEPLOY_PLANS 覆盖全部七包且目标脚本定义合法', () => {
+test('DEPLOY_PLANS 覆盖全部受管包且隔离包保持 fail-closed', () => {
   for (const id of core.PACK_IDS) {
     const plan = core.DEPLOY_PLANS[id];
     assert.ok(plan, `缺 ${id} 的 DEPLOY_PLAN`);
-    assert.ok(plan.install && typeof plan.install.file === 'string');
     assert.ok(Array.isArray(plan.backupDirs));
     assert.ok(Array.isArray(plan.evidence));
+    if (policy.isQuarantinedId(id)) {
+      // 隔离包：生效计划为空；可执行定义只能从 LEGACY 表在同意后取出
+      assert.strictEqual(plan.install, null, `${id} 未同意时不得带 install 计划`);
+      assert.ok(core.LEGACY_QUARANTINE_PLANS[id], `${id} 缺 legacy 定义`);
+      assert.strictEqual(typeof core.LEGACY_QUARANTINE_PLANS[id].install.file, 'string', `${id} legacy 定义不完整`);
+    } else {
+      assert.ok(plan.install && typeof plan.install.file === 'string', `${id} 发布包必须有 install 计划`);
+    }
   }
 });
 
@@ -369,8 +386,17 @@ test('findGuiExe 对七包安全返回可执行路径或 null', () => {
 
 /* ---------------- L3 进程层稳健化（老板反馈：不管哪个平台都容易找不到） ---------------- */
 
-test('probeRuntime 对七包永不抛异常且结构完整', () => {
+test('probeRuntime 对发布包永不抛异常，对隔离包未同意时 fail-closed', () => {
   for (const id of core.PACK_IDS) {
+    if (policy.isQuarantinedId(id)) {
+      // 隔离包在登记知情同意之前必须直接被策略层拒绝，而不是「探测失败」
+      assert.throws(
+        () => core.probeRuntime(id),
+        (e) => e && e.code === 'ERR_PACK_QUARANTINED',
+        `${id} 未登记同意时应拒绝执行`
+      );
+      continue;
+    }
     const r = core.probeRuntime(id);
     assert.strictEqual(typeof r.ok, 'boolean', `${id} ok 非布尔`);
     assert.ok(['cli', 'gui', 'skip'].includes(r.mode), `${id} mode 非法：${r.mode}`);
@@ -389,6 +415,7 @@ test('dsh 无独立进程通道 → 降级通过而不是判失败（历史 bug�
 
 test('probeRuntime 的 soft 语义：ok=false 必不 soft，soft=true 必 ok', () => {
   for (const id of core.PACK_IDS) {
+    if (policy.isQuarantinedId(id)) continue; // 未登记同意时直接拒绝，不参与 soft 语义
     const r = core.probeRuntime(id);
     if (!r.ok) assert.notStrictEqual(r.soft, true, `${id} 失败态不应标记 soft`);
     if (r.soft) assert.strictEqual(r.ok, true, `${id} soft 必须是 ok`);
@@ -415,12 +442,13 @@ test('findCodexCli 的目录名过滤不再要求 windows-x64 后缀（换安装
   assert.ok(/process\.env\.PATH/.test(fn), '缺少 PATH 兜底');
 });
 
-test('findCodexCliInfo 对无版本目录候选读取真实 --version，不误选旧版 CLI', () => {
+test('findCodexCliInfo 不执行候选可执行文件，版本只从路径名解析', () => {
   const src = fs.readFileSync(path.join(__dirname, '..', 'electron', 'core.cjs'), 'utf8');
   const fn = src.slice(src.indexOf('function findCodexCliInfo'), src.indexOf('function findCodexCli('));
-  assert.ok(/actualVersionTuple/.test(fn), '缺少真实版本读取逻辑');
-  assert.ok(/--version/.test(fn), '缺少 CLI --version 探测');
-  assert.ok(/execFileSync/.test(fn), '缺少版本探测进程调用');
+  // v1.5.5 起改为纯路径探测：未知版本的候选一律不执行，避免触发受感染 CLI
+  assert.doesNotMatch(fn, /execFileSync|execSync|spawnSync|spawn\(/, '路径探测不得执行候选 exe/cmd');
+  assert.ok(/versionTuple\(/.test(fn), '版本只能从路径名解析');
+  assert.doesNotMatch(fn, /['"]--version['"]/, '不得把 --version 作为参数传给候选');
 });
 
 test('detectPlatform 暴露 exeVia（告诉用户从哪找到的）', () => {
@@ -1022,14 +1050,16 @@ test('models.json：deepseek-v4-flash-vision-exp 已关闭并发工具调用', (
 
 const CODEX_PACK = path.join(__dirname, '..', 'packed-packs', 'codex');
 
-test('DEPLOY_PLANS.codex 直调 install-replica.ps1（故修复必须内建在 ps1，挂 cmd 上等于没修）', () => {
-  const plan = core.DEPLOY_PLANS.codex;
-  assert.ok(plan && plan.install, 'codex 必须有 install 计划');
+test('LEGACY_QUARANTINE_PLANS.codex 直调 install-replica.ps1（故修复必须内建在 ps1，挂 cmd 上等于没修）', () => {
+  const plan = core.LEGACY_QUARANTINE_PLANS.codex;
+  assert.ok(plan && plan.install, 'codex legacy 必须有 install 计划');
   assert.strictEqual(plan.install.file, 'install-replica.ps1');
   assert.strictEqual(plan.install.kind, 'ps1');
   assert.ok(!String(plan.install.file).endsWith('.cmd'), '不走 cmd → Step 0 不会被触发');
   assert.ok(plan.install.args.includes('-NoOpenLinks'), '必须禁推广弹窗');
   assert.ok(plan.install.args.includes('-SkipAstra6'), '软件安装不得扫 Desktop/Documents 找号池');
+  // 未登记同意时，生效计划仍是 DEPLOY_PLANS 里的空计划
+  assert.strictEqual(core.deployPlanFor('codex').install, null);
 });
 
 test('install-replica.ps1 内建 [1.5/9] codex_app namespace fix', () => {
@@ -1262,12 +1292,14 @@ test('内嵌 WorkBuddy 包是 v4.4 且必备脚本齐', () => {
 
 const AG_PACK = path.join(__dirname, '..', 'packed-packs', 'anti-gravity');
 
-test('DEPLOY_PLANS.anti-gravity 直调 Install-AntiGravity.ps1 且禁弹窗', () => {
-  const plan = core.DEPLOY_PLANS['anti-gravity'];
+test('LEGACY_QUARANTINE_PLANS.anti-gravity 直调 Install-AntiGravity.ps1 且禁弹窗', () => {
+  const plan = core.LEGACY_QUARANTINE_PLANS['anti-gravity'];
   assert.strictEqual(plan.install.file, 'Install-AntiGravity.ps1');
   assert.strictEqual(plan.install.kind, 'ps1');
   assert.ok(plan.install.args.includes('-NoOpenLinks'));
   assert.strictEqual(plan.uninstall.file, 'Uninstall.ps1');
+  // 未登记同意时，生效计划仍是 DEPLOY_PLANS 里的空计划
+  assert.strictEqual(core.deployPlanFor('anti-gravity').install, null);
 });
 
 test('内嵌反重力包是 v3.2 且三通道素材齐', () => {

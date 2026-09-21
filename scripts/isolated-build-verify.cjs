@@ -37,7 +37,7 @@ function inventory(dir) {
 }
 function lock() {
   const data = JSON.parse(fs.readFileSync(path.join(root, 'package-lock.json')));
-  assert.equal(data.version, '1.5.5');
+  assert.equal(data.version, '1.5.6');
   assert.equal(data.packages[''].devDependencies.electron, pins.electron);
   assert.equal(JSON.parse(fs.readFileSync(path.join(root, 'package.json'))).devDependencies.electron, pins.electron);
   for (const [name, version] of Object.entries(pins)) assert.equal(data.packages[`node_modules/${name}`].version, version, name);
@@ -76,10 +76,10 @@ function tools() {
   write('toolchain.json', { buildId, node: process.version, pins, records, nodeArchiveSha256: 'd60acfe00a2932254bb0ad20e01b0d74397a0875595de719654b214f4b03f307', electronArchiveSha256: '790a355b684d5c7cc8dc3cdd8c4cca7c4b2d054685427c7554a956879a82e70b' });
 }
 function artifact() {
-  const exe = path.join(root, 'release/SusuAIOverclock-1.5.5-portable.exe');
+  const exe = path.join(root, 'release/SusuAIOverclock-1.5.6-portable.exe');
   const launcherTemplate = fs.readFileSync(path.join(root, 'node_modules/app-builder-lib/templates/nsis/portable.nsi'), 'utf8');
   assert.ok(launcherTemplate.includes('${VERSION}-electron44.4.3'), 'Runtime-specific launcher cache identity missing');
-  write('launcher-cache-identity.json', { buildId, applicationVersion: '1.5.5', cacheKey: '1.5.5-electron44.4.3', templateSha256: sha(path.join(root, 'node_modules/app-builder-lib/templates/nsis/portable.nsi')), reason: 'Never silently reuse superseded Electron33 same-version cache' });
+  write('launcher-cache-identity.json', { buildId, applicationVersion: '1.5.6', cacheKey: '1.5.6-electron44.4.3', templateSha256: sha(path.join(root, 'node_modules/app-builder-lib/templates/nsis/portable.nsi')), reason: 'Never silently reuse superseded Electron33 same-version cache' });
   const verification = path.join(base, 'verification');
   assert.ok(!fs.existsSync(verification), 'Refusing stale verification destination');
   fs.mkdirSync(verification);
@@ -115,7 +115,7 @@ function artifact() {
   const unpacked = path.join(verification, 'asar-extracted');
   asar.extractAll(appAsar, unpacked);
   const pkg = JSON.parse(fs.readFileSync(path.join(unpacked, 'package.json')));
-  assert.equal(pkg.version, '1.5.5');
+  assert.equal(pkg.version, '1.5.6');
   const req = createRequire(path.join(unpacked, 'package.json'));
   const dependencies = {};
   for (const dependency of Object.keys(pkg.dependencies)) dependencies[dependency] = req.resolve(dependency);

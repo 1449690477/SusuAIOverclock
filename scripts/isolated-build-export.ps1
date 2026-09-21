@@ -47,7 +47,7 @@ try {
     $stream = $entry.Open()
     try { $stream.Write($bytes,0,$bytes.Length) } finally { $stream.Dispose() }
   }
-  $report = [ordered]@{schemaVersion=1;createdUtc=[DateTime]::UtcNow.ToString('o');projectVersion='1.5.5';files=$manifest;excluded=$excluded;limitation='Source-only snapshot from incident host; not an antivirus verdict or hypervisor attestation.'}
+  $report = [ordered]@{schemaVersion=1;createdUtc=[DateTime]::UtcNow.ToString('o');projectVersion='1.5.6';files=$manifest;excluded=$excluded;limitation='Source-only snapshot from incident host; not an antivirus verdict or hypervisor attestation.'}
   $json = $report | ConvertTo-Json -Depth 8
   $bytes = [Text.Encoding]::UTF8.GetBytes($json)
   $stream = $zip.CreateEntry('SOURCE-MANIFEST.json').Open()

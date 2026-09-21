@@ -53,7 +53,17 @@ const os = require('node:os');
 const { spawn } = require('node:child_process');
 
 const core = require('./core.cjs');
-const { getPackBlockReason, assertPackAllowed, getDeployPlanInfo, assertBackupAllowed } = require('./security-policy.cjs');
+const {
+  getPackBlockReason,
+  assertPackAllowed,
+  getDeployPlanInfo,
+  assertBackupAllowed,
+  setQuarantineConsent,
+  hasQuarantineConsent,
+  isQuarantinedId,
+  QUARANTINE_CONSENT_LABEL,
+  QUARANTINE_CONSENT_NOTICE
+} = require('./security-policy.cjs');
 const { assertPackSourceAllowed, missingExpectedEntries } = require('./pack-source-policy.cjs');
 trace('require(core.cjs) 完成');
 
@@ -324,16 +334,19 @@ async function runDeepVerify(id) {
   result.passAt = 'L2';
 
   // L3 进程层 —— 走 core.probeRuntime 的多源探测，不再单靠一条硬编码路径
-  const chan = core.L4_CHANNELS[id] || { mode: 'gui' };
+  const chan = core.l4ChannelFor(id);
+  const cliChan = core.cliChannelFor(id);
   const rt = core.probeRuntime(id);
   let l3ok = rt.ok;
   let l3label = rt.label;
   let l3detail = rt.detail || '';
   // CLI 通道：拿到 exe 才真起一次；探测期已回退到 GUI 的不在此重复 spawn
   if (rt.ok && rt.mode === 'cli' && rt.exe && !rt.soft) {
-    const r = await spawnOnce(id, rt.exe, ['--version'], { timeout: 20000 });
+    // 版本探测参数按通道登记表取，不再假定是 codex 的 --version
+    const versionArgs = (cliChan && cliChan.versionArgs) || ['--version'];
+    const r = await spawnOnce(id, rt.exe, versionArgs, { timeout: 20000 });
     l3ok = r.code === 0;
-    l3label = l3ok ? `CLI 可启动（${(r.stdout || '').trim().split('\n')[0] || 'codex'}）` : 'CLI 启动失败';
+    l3label = l3ok ? `CLI 可启动（${(r.stdout || '').trim().split('\n')[0] || chan.cliName || 'CLI'}）` : 'CLI 启动失败';
     l3detail = (r.stdout + '\n' + r.stderr).trim().slice(0, 300) || rt.detail || '';
   } else if (rt.ok && !rt.exe) {
     l3detail = [rt.label, rt.detail].filter(Boolean).join('；');
@@ -368,7 +381,8 @@ async function runDeepVerify(id) {
     return result;
   }
   if (l4mode === 'cli') {
-    const exe = rt.exe || core.findCodexCli();
+    const chanExe = cliChan ? (cliChan.findExe() || {}).path : null;
+    const exe = rt.exe || chanExe || core.findCodexCli();
     if (!exe) {
       layers.push({ layer: 'L4', name: '会话层', ok: false, label: 'CLI 通道不可用', detail: '' });
       result.failAt = 'L4';
@@ -377,7 +391,11 @@ async function runDeepVerify(id) {
     }
     // eslint-disable-next-line no-await-in-loop
     const verifyCwd = os.tmpdir();
-    const r = await spawnOnce(id, exe, core.buildCliVerifyArgs(verifyCwd, core.VERIFY_PROMPT), {
+    // 无副作用问答参数按通道登记表取（codex 走 exec 一组开关，claude 走 -p）
+    const verifyArgs = cliChan && cliChan.buildVerifyArgs
+      ? cliChan.buildVerifyArgs(verifyCwd, core.VERIFY_PROMPT)
+      : ['--version'];
+    const r = await spawnOnce(id, exe, verifyArgs, {
       cwd: verifyCwd,
       stdin: 'ignore',
       timeout: 120000
@@ -447,16 +465,37 @@ async function runDeepVerify(id) {
 /* ------------------------------------------------------------------ 状态 */
 
 function defaultState() {
-  return { root: null, lastScanAt: null, activity: [], prefs: { autoRefresh: true }, imported: {} };
+  return { root: null, lastScanAt: null, activity: [], prefs: { autoRefresh: true }, imported: {}, consents: {} };
+}
+
+/**
+ * 把落盘的同意登记同步进策略层的内存登记表。
+ * 每个 IPC 入口都会先 loadState()，所以这是唯一需要挂的同步点：
+ * 策略层永远只认 state.json 里的记录，渲染层无法单方面解锁任何载荷。
+ */
+function syncConsentRegister(state) {
+  const ids = Object.keys(state.consents || {}).filter((id) => isQuarantinedId(id));
+  try {
+    setQuarantineConsent(ids);
+  } catch (e) {
+    trace('同意登记同步失败，按空登记处理: ' + String(e.message || e));
+    setQuarantineConsent([]);
+  }
+  return state;
 }
 
 async function loadState() {
   try {
     const raw = await fsp.readFile(STATE_FILE, 'utf8');
     const j = JSON.parse(raw);
-    return { ...defaultState(), ...j, prefs: { ...defaultState().prefs, ...(j.prefs || {}) } };
+    return syncConsentRegister({
+      ...defaultState(),
+      ...j,
+      prefs: { ...defaultState().prefs, ...(j.prefs || {}) },
+      consents: { ...(j.consents || {}) }
+    });
   } catch {
-    return defaultState();
+    return syncConsentRegister(defaultState());
   }
 }
 
@@ -546,6 +585,10 @@ async function scanPack(state, def) {
     path: packPath,
     source: resolved.source,
     blockedReason: resolved.blockedReason || null,
+    consentRequired: core.isConsentPack(def.id),
+    consented: hasQuarantineConsent(def.id),
+    consentLabel: core.isConsentPack(def.id) ? QUARANTINE_CONSENT_LABEL : null,
+    consentNotice: core.isConsentPack(def.id) ? QUARANTINE_CONSENT_NOTICE : null,
     found: false,
     version: null,
     versionSource: null,
@@ -632,7 +675,7 @@ async function scanPack(state, def) {
 
 async function buildHub() {
   const state = await loadState();
-  // 隔离项只返回说明，不遍历载荷；其余包独立扫描。
+  // 隔离项在未登记同意时只返回说明、不遍历载荷；登记同意后按普通包扫描。
   const packs = await Promise.all(core.PACKS.map((def) => scanPack(state, def)));
   const embeddedRoot = core.embeddedPacksRoot();
   return {
@@ -641,6 +684,8 @@ async function buildHub() {
     prefs: state.prefs,
     activity: state.activity,
     packs,
+    consents: Object.keys(state.consents || {}),
+    consentLabel: QUARANTINE_CONSENT_LABEL,
     appVersion: app.getVersion(),
     userDir: USER_DIR,
     embeddedRoot,
@@ -858,10 +903,35 @@ function registerIpc() {
     const plans = {};
     for (const id of core.PACK_IDS) {
       breaks[id] = core.verifyBreak(id);
-      const plan = core.DEPLOY_PLANS[id] || {};
-      plans[id] = getDeployPlanInfo(id, plan);
+      // 生效计划：隔离包只有登记同意后才返回旧脚本，未登记时等同空计划
+      const plan = core.deployPlanFor(id);
+      plans[id] = {
+        ...getDeployPlanInfo(id, plan),
+        consentRequired: core.isConsentPack(id),
+        consented: hasQuarantineConsent(id)
+      };
     }
     return { platforms, breaks, plans };
+  });
+
+  /**
+   * 知情同意登记（勾选 / 取消）。
+   * 渲染层只能提交「已隔离 id + 布尔」；落盘之后再同步进策略层内存登记表。
+   * 未落盘之前，策略层仍然拒绝该载荷的一切操作——UI 状态不是安全边界。
+   */
+  ipcMain.handle('dango:setConsent', async (_e, id, granted) => {
+    guard(id);
+    if (!isQuarantinedId(id)) throw new Error('该包不属于隔离载荷，无需知情同意');
+    const state = await loadState();
+    if (granted) {
+      state.consents[id] = { at: new Date().toISOString(), label: QUARANTINE_CONSENT_LABEL };
+      pushActivity(state, 'consent', `${id}：已勾选「${QUARANTINE_CONSENT_LABEL}」，解锁安装 / 卸载 / 备份 / 恢复 / 深度验证`);
+    } else {
+      delete state.consents[id];
+      pushActivity(state, 'consent', `${id}：已撤销知情同意，恢复强制隔离`);
+    }
+    await saveState(state);
+    return buildHub();
   });
 
   ipcMain.handle('dango:getIcon', async (_e, id) => {
@@ -902,7 +972,7 @@ function registerIpc() {
     guard(id);
     assertPackAllowed(id);
     return withBusy(async () => {
-      const plan = core.DEPLOY_PLANS[id] || {};
+      const plan = core.deployPlanFor(id);
       const dirs = (plan.backupDirs || []).filter((d) => {
         try {
           return fs.statSync(d).isDirectory();
@@ -939,7 +1009,7 @@ function registerIpc() {
         throw new Error('备份不存在');
       }
       const entries = await fsp.readdir(src);
-      const plan = core.DEPLOY_PLANS[id] || {};
+      const plan = core.deployPlanFor(id);
       for (const entry of entries) {
         const from = path.join(src, entry);
         // 只还原到该包声明过的备份位置，避免把备份写到任意路径
@@ -964,7 +1034,7 @@ function registerIpc() {
       const def = core.PACKS.find((p) => p.id === id);
       const { dir: packPath, blockedReason } = resolvePackDir(state, def);
       if (!packPath) throw new Error(blockedReason || '未找到包目录（外部根目录与内嵌包都没有）');
-      const plan = core.DEPLOY_PLANS[id] || {};
+      const plan = core.deployPlanFor(id);
       const script = action === 'install' ? plan.install : plan.uninstall;
       if (!script) throw new Error(`${def.name} 没有提供${action === 'install' ? '安装' : '卸载'}脚本`);
 
@@ -1041,7 +1111,7 @@ function registerIpc() {
   ipcMain.handle('dango:verifyDeep', async (_e, id) => {
     guard(id);
     assertPackAllowed(id);
-    const chan = core.L4_CHANNELS[id] || { mode: 'gui' };
+    const chan = core.l4ChannelFor(id);
     // GUI 拉起会短暂把客户端顶到前台，先明确提示
     emitLog({ id, action: 'install', kind: 'sys', line: `开始深度验证：${id}（L1 文件 → L2 配置 → L3 进程 → L4 会话）` });
     const r = await withBusy(() => runDeepVerify(id));

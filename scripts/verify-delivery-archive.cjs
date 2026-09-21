@@ -8,7 +8,7 @@ const crypto = require('node:crypto');
 const zlib = require('node:zlib');
 const { scanBuffer, assertNoLinks } = require('./preflight-security.cjs');
 const root = path.resolve(__dirname, '..');
-const filename = path.join(root, 'release', 'SusuAIOverclock-1.5.5-portable-electron44.4.3-isolated.zip');
+const filename = path.join(root, 'release', 'SusuAIOverclock-1.5.6-portable-electron44.4.3-isolated.zip');
 const expectedZip = '81d0b280ffcc0765a139bab710f64cc794cdb5b6bb84ad4c1069cdf1bc01d883';
 const expectedExe = '089657d058dd647ae350be8936de3d536c127b66ac1ecd728067ff565887eb7b';
 const digest = data => crypto.createHash('sha256').update(data).digest('hex');
@@ -44,7 +44,7 @@ for (let index = 0; index < count; index++) {
 }
 if (cursor !== centralEnd) throw new Error('Central directory size mismatch');
 const binaries = entries.filter(entry => /\.(exe|dll|pyd|node|com|scr)$/i.test(entry.name));
-if (binaries.length !== 1 || path.posix.basename(binaries[0].name) !== 'SusuAIOverclock-1.5.5-portable.exe') throw new Error('Unexpected executable members');
+if (binaries.length !== 1 || path.posix.basename(binaries[0].name) !== 'SusuAIOverclock-1.5.6-portable.exe') throw new Error('Unexpected executable members');
 const item = binaries[0];
 const at = item.offset;
 if (item.size !== 114047016 || at + 30 > zip.length || zip.readUInt32LE(at) !== 0x04034b50) throw new Error('Invalid executable entry');
@@ -64,7 +64,7 @@ const report = {
   executableRunOnHost: false, antivirusClearance: false,
   limitation: 'Guest ClamAV still reports security-example/aggregate-library content signatures. This verifies transport integrity and known prepender absence, not all-malware absence or host disinfection.',
 };
-const reportPath = path.join(root, 'release', '1.5.5-DELIVERY-INTEGRITY.json');
+const reportPath = path.join(root, 'release', '1.5.6-DELIVERY-INTEGRITY.json');
 if (fs.existsSync(reportPath)) assertNoLinks(reportPath);
 fs.writeFileSync(reportPath, JSON.stringify(report, null, 2) + '\n', 'utf8');
 console.log(JSON.stringify(report, null, 2));

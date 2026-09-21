@@ -129,7 +129,7 @@ export default function App() {
 
     // 逐个取平台真实图标（从 exe 提取）
     (async () => {
-      for (const id of ['codex', 'codex-panghu', 'cursor', 'dsh', 'opencode', 'workbuddy', 'workbuddy-ai', 'anti-gravity']) {
+      for (const id of ['codex', 'codex-panghu', 'cursor', 'dsh', 'claude', 'opencode', 'workbuddy', 'workbuddy-ai', 'anti-gravity']) {
         // eslint-disable-next-line no-await-in-loop
         const r = await api.getIcon(id).catch(() => null);
         if (!alive) return;
@@ -186,6 +186,30 @@ export default function App() {
     [api, packs, plans, refreshDetect, toast]
   );
 
+  /**
+   * 隔离载荷的知情同意：勾选即落盘 state.json，主进程再同步进策略层登记表。
+   * 撤销同样走这里；未勾选时策略层仍然拒绝安装/卸载/备份/恢复/深度验证。
+   */
+  const setConsent = useCallback(
+    async (id: string, granted: boolean) => {
+      if (!api) return;
+      try {
+        const h = await api.setConsent(id, granted);
+        setHub(h);
+        const fresh = h.packs.find((p) => p.id === id);
+        if (fresh && selected?.id === id) setSelected(fresh);
+        await refreshDetect();
+        toast(
+          granted ? 'ok' : 'info',
+          granted ? '已勾选「我知晓 同意」，该隔离载荷已解锁' : '已撤销知情同意，恢复强制隔离'
+        );
+      } catch (e: unknown) {
+        toast('err', e instanceof Error ? e.message : String(e));
+      }
+    },
+    [api, refreshDetect, selected?.id, toast]
+  );
+
   /** 深度分层验证：拉起客户端发口令抓回复，定位失败层 */
   const verifyDeep = useCallback(
     async (id: string) => {
@@ -219,7 +243,15 @@ export default function App() {
     async (action: 'install' | 'uninstall') => {
       if (!api) return;
       const label = action === 'install' ? '安装' : '卸载';
-      const targets = packs.filter((p) => !p.blockedReason && !plans[p.id]?.blockedReason && p.found && (action === 'install' ? plans[p.id]?.hasInstall : plans[p.id]?.hasUninstall));
+      // 隔离载荷即使已登记同意也不进批量：旧载荷要谁装谁自己点，避免一键把三个旧包全推进去
+      const targets = packs.filter(
+        (p) =>
+          !p.consentRequired &&
+          !p.blockedReason &&
+          !plans[p.id]?.blockedReason &&
+          p.found &&
+          (action === 'install' ? plans[p.id]?.hasInstall : plans[p.id]?.hasUninstall)
+      );
       if (!targets.length) {
         toast('info', `没有可${label}的包`);
         return;
@@ -280,7 +312,7 @@ export default function App() {
           <MascotCat size={38} />
           <div>
             <div className="titlebar-title">苏苏 AI超频 · Susu AI Overclock</div>
-            <div className="titlebar-sub">五个发布包 · 三个旧载荷已隔离 · 平台管理保留</div>
+            <div className="titlebar-sub">六个发布包 · 三个旧载荷可勾选解锁 · 平台管理保留</div>
           </div>
         </div>
         <div className="titlebar-spacer" />
@@ -350,8 +382,8 @@ export default function App() {
                 <MascotCat size={110} />
                 <h3>先选一个根目录</h3>
                 <p>
-                  选择包含发布包的父目录（cursor / dsh / opencode / workbuddy / workbuddy-ai）。
-                  Codex、胖虎、反重力旧载荷已隔离，外部目录和历史导入不能重新启用它们。
+                  选择包含发布包的父目录（cursor / dsh / claude / opencode / workbuddy / workbuddy-ai）。
+                  Codex、胖虎、反重力旧载荷默认隔离，需在卡片上勾选「我知晓 同意」才会解锁安装。
                 </p>
                 <button className="btn btn-primary" onClick={() => run(() => api.chooseRoot())} disabled={busy}>
                   <FolderSearch size={14} /> 选择根目录
@@ -382,7 +414,7 @@ export default function App() {
                     <Trash2 size={13} /> 一键全部卸载
                   </button>
                   <span className="deploy-hint">
-                    安装/卸载会执行允许包的脚本；隔离载荷不参与批量操作，旧备份与导入来源不受信任。
+                    安装/卸载会执行允许包的脚本；隔离载荷不参与批量操作（勾选同意后也请单独安装），旧备份与导入来源不受信任。
                   </span>
                 </div>
 
@@ -447,6 +479,7 @@ export default function App() {
                         onOpen={setSelected}
                         onDeploy={deploy}
                         onDeepVerify={verifyDeep}
+                        onConsent={setConsent}
                       />
                     ))}
                   </div>
@@ -518,6 +551,7 @@ export default function App() {
             toast(r.active ? 'ok' : 'info', r.blockedReason || (r.active ? '破甲已生效' : '未检测到生效标记'));
           }}
           onDeepVerify={verifyDeep}
+          onConsent={setConsent}
         />
       ) : null}
 

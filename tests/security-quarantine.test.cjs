@@ -42,7 +42,7 @@ function before(text, first, second) {
 }
 
 test('release allowlist and quarantine exports are immutable and disjoint', () => {
-  assert.deepEqual(policy.RELEASE_PACK_IDS, ['cursor', 'dsh', 'opencode', 'workbuddy', 'workbuddy-ai']);
+  assert.deepEqual(policy.RELEASE_PACK_IDS, ['cursor', 'dsh', 'claude', 'opencode', 'workbuddy', 'workbuddy-ai']);
   assert.deepEqual(Object.keys(policy.QUARANTINED_PACKS), ['codex', 'codex-panghu', 'anti-gravity']);
   for (const value of [policy, policy.RELEASE_PACK_IDS, policy.QUARANTINED_PACKS]) assert.ok(Object.isFrozen(value));
   assert.throws(() => policy.RELEASE_PACK_IDS.push('codex'), TypeError);
@@ -52,6 +52,71 @@ test('release allowlist and quarantine exports are immutable and disjoint', () =
     assert.equal(policy.getPackBlockReason(id), null);
     assert.doesNotThrow(() => policy.assertPackAllowed(id));
   }
+});
+
+test('quarantine consent is opt-in, reversible and rejects non-quarantined ids', () => {
+  // Empty register reproduces the v1.5.5 hard-quarantine behaviour exactly.
+  assert.deepEqual(policy.grantedQuarantineIds(), []);
+  assert.ok(Object.isFrozen(policy.grantedQuarantineIds()));
+  for (const id of Object.keys(policy.QUARANTINED_PACKS)) {
+    assert.equal(policy.hasQuarantineConsent(id), false);
+    assert.ok(policy.getPackBlockReason(id));
+  }
+  // Only known quarantined ids may be registered; everything else is rejected.
+  for (const id of ['cursor', 'claude', 'unknown', '', null, undefined, 'constructor', '__proto__', {}]) {
+    assert.throws(() => policy.grantQuarantineConsent(id), undefined, `grant(${String(id)})`);
+  }
+  assert.throws(() => policy.setQuarantineConsent('codex'), TypeError);
+  assert.throws(() => policy.setQuarantineConsent(['cursor']));
+  try {
+    assert.deepEqual(policy.grantQuarantineConsent('codex'), ['codex']);
+    assert.equal(policy.hasQuarantineConsent('codex'), true);
+    assert.equal(policy.getPackBlockReason('codex'), null);
+    assert.doesNotThrow(() => policy.assertPackAllowed('codex'));
+    // Consent is per-id: the other quarantined payloads stay blocked.
+    assert.equal(policy.hasQuarantineConsent('anti-gravity'), false);
+    assert.ok(policy.getPackBlockReason('anti-gravity'));
+    assert.deepEqual(policy.setQuarantineConsent([]), []);
+    assert.ok(policy.getPackBlockReason('codex'));
+    assert.throws(() => policy.assertPackAllowed('codex'), { code: 'ERR_PACK_QUARANTINED' });
+  } finally {
+    policy.setQuarantineConsent([]);
+  }
+  assert.deepEqual(policy.grantedQuarantineIds(), []);
+});
+
+test('consented quarantined ids resolve to a plan; the others stay fail-closed', () => {
+  const legacy = { install: { file: 'install-replica.ps1' }, uninstall: { file: 'Uninstall.ps1' } };
+  try {
+    policy.grantQuarantineConsent('codex');
+    assert.deepEqual(policy.getDeployPlanInfo('codex', legacy), {
+      blockedReason: null, hasInstall: true, hasUninstall: true,
+      installFile: 'install-replica.ps1', uninstallFile: 'Uninstall.ps1'
+    });
+    assert.equal(policy.getDeployPlanInfo('anti-gravity', legacy).hasInstall, false);
+    assert.equal(policy.getDeployPlanInfo('cursor', { install: null }).hasInstall, false);
+    assert.doesNotThrow(() => policy.assertBackupAllowed('codex', 'codex-20260920-123456'));
+    assert.throws(() => policy.assertBackupAllowed('cursor', 'codex-20260920-123456'));
+  } finally {
+    policy.setQuarantineConsent([]);
+  }
+  assert.equal(policy.getDeployPlanInfo('codex', legacy).hasInstall, false);
+});
+
+test('consent-only helpers and labels are exported, and no payload is named in the label', () => {
+  assert.equal(policy.QUARANTINE_CONSENT_LABEL, '我知晓 同意');
+  assert.match(policy.QUARANTINE_CONSENT_NOTICE, /consent-required/);
+  assert.match(policy.QUARANTINE_CONSENT_NOTICE, /不再强制隔离/);
+  assert.match(policy.QUARANTINE_CONSENT_NOTICE, /不是安全认证|解锁同样不是/);
+  for (const fn of ['isQuarantinedId', 'setQuarantineConsent', 'grantQuarantineConsent', 'revokeQuarantineConsent', 'grantedQuarantineIds', 'hasQuarantineConsent', 'getSourceNameMatchId']) {
+    assert.equal(typeof policy[fn], 'function', fn);
+  }
+  assert.equal(policy.isQuarantinedId('claude'), false);
+  assert.equal(policy.isQuarantinedId('codex'), true);
+  assert.equal(policy.getSourceNameMatchId('/x/slo-runtime-hook.exe'), 'codex');
+  assert.equal(policy.getSourceNameMatchId('/x/keysmith/'), 'codex-panghu');
+  assert.equal(policy.getSourceNameMatchId('/x/install-antigravity.ps1'), 'anti-gravity');
+  assert.equal(policy.getSourceNameMatchId('/release/claude/install-claude.py'), null);
 });
 
 test('quarantines explain concrete affected files and untrusted restore sources', () => {
@@ -138,8 +203,29 @@ test('IPC mutation/execution routes guard IDs before reading state or doing work
   before(ipcBody('backup'), 'assertPackSourceAllowed(id, d)', 'fsp.cp(');
   before(ipcBody('importPackDir'), 'assertPackSourceAllowed(platformId, dir)', 'state.imported[platformId] =');
   before(ipcBody('importSingleFile'), 'assertPackSourceAllowed(platformId, file)', 'fs.readFileSync(');
-  assert.match(ipcBody('detect'), /plans\[id\] = getDeployPlanInfo\(id, plan\)/);
+  assert.match(ipcBody('detect'), /const plan = core\.deployPlanFor\(id\);/);
+  assert.match(ipcBody('detect'), /getDeployPlanInfo\(id, plan\)/);
   before(ipcBody('openRoot'), 'fs.statSync(state.root).isDirectory()', 'shell.openPath(state.root)');
+});
+
+test('consent IPC accepts only quarantined ids, persists, then re-resolves plans', () => {
+  const body = ipcBody('setConsent');
+  assert.match(body, /guard\(id\);/);
+  assert.match(body, /if \(!isQuarantinedId\(id\)\) throw new Error/);
+  before(body, 'isQuarantinedId(id)', 'state.consents[id] =');
+  before(body, 'state.consents[id] =', 'await saveState(state)');
+  assert.match(body, /delete state\.consents\[id\]/);
+  assert.match(body, /label: QUARANTINE_CONSENT_LABEL/);
+  // The register is derived from persisted state on every state load: the
+  // renderer's checkbox alone can never unlock a payload.
+  assert.match(main, /function syncConsentRegister\(state\)/);
+  const sync = between(main, 'function syncConsentRegister(', 'async function loadState(');
+  before(sync, 'Object.keys(state.consents || {})', 'setQuarantineConsent(ids)');
+  assert.match(sync, /return state;/);
+  assert.match(between(main, 'async function loadState()', 'async function saveState('), /syncConsentRegister\(/);
+  assert.match(main, /consents: Object\.keys\(state\.consents \|\| \{\}\)/);
+  assert.match(read('electron/preload.cjs'), /setConsent: \(id, granted\) => ipcRenderer\.invoke\('dango:setConsent', id, Boolean\(granted\)\)/);
+  assert.match(read('src/App.tsx'), /await api\.setConsent\(id, granted\)/);
 });
 
 test('historical imported/external/embedded sources pass through quarantine resolution', () => {
@@ -154,7 +240,11 @@ test('historical imported/external/embedded sources pass through quarantine reso
   assert.match(sourcePolicy, /fs\.lstatSync\(name\)\.isSymbolicLink\(\)/);
   assert.match(sourcePolicy, /fs\.lstatSync\(name\)/);
   assert.match(sourcePolicy, /stat\.isSymbolicLink\(\).*throw sourceError\('ERR_PACK_SOURCE_LINK'/);
-  assert.match(sourcePolicy, /getSourceNameBlockReason\(path\.basename\(name\)\)/);
+  assert.match(sourcePolicy, /sourceNameReason\(id, path\.basename\(name\)\)/);
+  // Only the matching, consented id may use its own legacy source tree.
+  assert.match(sourcePolicy, /function sourceNameReason\(id, name\)/);
+  assert.match(sourcePolicy, /if \(matched === id && hasQuarantineConsent\(id\)\) return null;/);
+  assert.match(sourcePolicy, /return QUARANTINED_PACKS\[matched\];/);
   assert.doesNotMatch(sourcePolicy, /child_process|execFile|spawn\(/);
 });
 
@@ -177,6 +267,41 @@ test('plans, source analysis and all deep-execution helpers fail closed', () => 
   assert.match(core, /return RELEASE_PACK_IDS\.every\(/);
 });
 
+test('legacy quarantined plans and L4 channels stay dormant until consent', () => {
+  const legacy = between(core, 'const LEGACY_QUARANTINE_PLANS =', 'function detectPlatform(');
+  for (const id of Object.keys(policy.QUARANTINED_PACKS)) {
+    const key = id === 'codex' ? 'codex' : `'${id}'`;
+    assert.match(legacy, new RegExp(`${key}: \\{`), key);
+  }
+  // v1.5.4 legacy scripts, not new ones: the substituted bytes must be visible.
+  assert.match(legacy, /install-replica\.ps1/);
+  assert.match(legacy, /Install-AntiGravity\.ps1/);
+  assert.match(
+    core,
+    /function deployPlanFor\(id\) \{\s*const legacy = LEGACY_QUARANTINE_PLANS\[id\];\s*if \(legacy && hasQuarantineConsent\(id\)\) return legacy;\s*return DEPLOY_PLANS\[id\] \|\| \{\};/
+  );
+  assert.match(core, /function isConsentPack\(id\) \{/);
+  assert.match(core, /const plan = deployPlanFor\(id\);/);
+  assert.match(core, /function l4ChannelFor\(id\) \{/);
+  assert.match(core, /const chan = l4ChannelFor\(id\);/);
+  assert.match(core, /function cliChannelFor\(id\) \{/);
+  // mode:'none' payloads are hard-skipped unless consent promotes them.
+  const channels = between(core, 'const L4_CHANNELS = {', 'function l4ChannelFor(id)');
+  for (const id of Object.keys(policy.QUARANTINED_PACKS)) {
+    const key = id === 'codex' ? 'codex' : `'${id}'`;
+    assert.match(channels, new RegExp(`${key}: \\{ mode: 'none', consentMode: '(cli|gui)'`), key);
+  }
+  // The main process must not read the raw plan/channel tables anymore.
+  assert.doesNotMatch(main, /core\.DEPLOY_PLANS/);
+  assert.doesNotMatch(main, /core\.L4_CHANNELS/);
+  assert.match(main, /core\.deployPlanFor\(id\)/);
+  assert.match(main, /core\.l4ChannelFor\(id\)/);
+  // No remaining codex-only assumptions in the CLI verification path.
+  assert.doesNotMatch(main, /core\.buildCliVerifyArgs\(/);
+  assert.match(main, /cliChan\.buildVerifyArgs\(verifyCwd, core\.VERIFY_PROMPT\)/);
+  assert.match(main, /cliChan && cliChan\.versionArgs\) \|\| \['--version'\]/);
+});
+
 test('platform viewing and independent Codex text library are not pack deployment', () => {
   for (const name of ['detect', 'getIcon', 'verifyBreak', 'listBackups', 'clearImport', 'libraryImport', 'libraryImportBatch', 'libraryRemove']) {
     assert.doesNotMatch(ipcBody(name), /assertPackAllowed\(/, `${name} remains a separate management route`);
@@ -185,24 +310,69 @@ test('platform viewing and independent Codex text library are not pack deploymen
   assert.match(targets, /codex: \{\s*mode: 'append',\s*file: \(\) => path\.join\(codexHome\(\), 'AGENTS.md'\)/);
 });
 
-test('UI displays quarantine reasons and excludes blocked packs from batch actions', () => {
+test('UI displays quarantine reasons and excludes payloads from batch actions', () => {
   const app = read('src/App.tsx');
-  assert.match(app, /const targets = packs\.filter\(\(p\) => !p\.blockedReason && !plans\[p\.id\]\?\.blockedReason/);
+  assert.match(app, /const targets = packs\.filter\(/);
+  assert.match(app, /!p\.consentRequired/);
+  assert.match(app, /!plans\[p\.id\]\?\.blockedReason/);
   for (const file of ['PackCard.tsx', 'PackDetailModal.tsx']) {
     const text = read(`src/components/${file}`);
     assert.match(text, /const blockedReason = pack\.blockedReason \|\| plan\?\.blockedReason/);
     assert.match(text, /disabled=\{busy \|\| Boolean\(blockedReason\)/);
     assert.match(text, /已隔离/);
+    // Unticked => still read-only; ticking is the only path to unlock.
+    assert.match(text, /const consented = Boolean\(pack\.consented\)/);
+    assert.match(text, /onChange=\{\(e\) => onConsent\?\.\(pack\.id, e\.target\.checked\)\}/);
+    assert.match(text, /checked=\{consented\}/);
+    assert.match(text, /pack\.consentLabel \|\| '我知晓 同意'/);
   }
+  assert.match(read('src/components/PackCard.tsx'), /data-testid=\{`consent-check-\$\{pack\.id\}`\}/);
+  assert.match(read('src/components/PackDetailModal.tsx'), /data-testid=\{`detail-consent-check-\$\{pack\.id\}`\}/);
   const imports = read('src/components/ImportModal.tsx');
   assert.match(imports, /const canConfirm = Boolean\(picked\) && !selectedBlock/);
   assert.match(imports, /disabled=\{busy \|\| Boolean\(p\.blockedReason \|\| p\.analysis\?\.blockedReason \|\| blockOf\(p\.platform\)\)\}/);
 });
 
+test('the Claude card is a first-class release pack with a matching style token', () => {
+  assert.match(core, /id: 'claude',\s*\n\s*name: 'Claude Code 破甲包'/);
+  assert.match(core, /folder: 'claude',\s*\n\s*target: 'Claude Code',\s*\n\s*accent: 'clay'/);
+  assert.match(core, /claude: \{\s*\n\s*mode: 'cli',\s*\n\s*cliName: 'claude CLI'/);
+  assert.match(core, /function buildClaudeVerifyArgs\(cwd, prompt = VERIFY_PROMPT\) \{\s*\n\s*return \['-p', String\(prompt\)\];/);
+  assert.match(core, /claude: \{\s*\n\s*findExe: \(\) => findClaudeCliInfo\(\),\s*\n\s*versionArgs: \['--version'\],\s*\n\s*buildVerifyArgs: \(cwd, prompt\) => buildClaudeVerifyArgs\(cwd, prompt\)/);
+  assert.match(core, /function findClaudeCliInfo\(\)/);
+  assert.doesNotMatch(between(core, 'function findClaudeCliInfo()', 'const CLI_CHANNELS ='), /execFileSync\(|spawn\(/);
+  assert.match(core, /CHA-CLAUDE-POJIA:BEGIN/);
+  assert.match(read('src/styles/app.css'), /\.accent-clay \{/);
+  assert.match(read('src/styles/app.css'), /--clay: #d97757;/);
+  assert.match(read('src/types.ts'), /'indigo' \| 'clay'/);
+  assert.match(read('src/App.tsx'), /'dsh', 'claude', 'opencode'/);
+  // The card must show the real embedded pack version, not a hard-coded one.
+  const pkg = JSON.parse(read('package.json'));
+  assert.deepEqual(pkg.build.extraResources.find(r => r.from === 'packed-packs').filter.filter(f => f.endsWith('/**') && !f.startsWith('!')), ['cursor/**', 'dsh/**', 'claude/**', 'opencode/**', 'workbuddy/**', 'workbuddy-ai/**']);
+  assert.ok(fs.existsSync(path.join(__dirname, '..', 'packed-packs', 'claude', 'install-claude.py')));
+  assert.ok(fs.existsSync(path.join(__dirname, '..', 'packed-packs', 'claude', 'README-CN.txt')));
+});
+
+test('real filesystem: embedded Claude pack satisfies expected entries and source guard', () => {
+  const root = path.join(__dirname, '..', 'packed-packs', 'claude');
+  const expected = ['install-claude.py', 'CLAUDE.md.cha-block.md', 'routes', 'routes/leaves', 'workflows', 'README-CN.txt'];
+  assert.deepEqual(missingExpectedEntries(root, expected), []);
+  assert.doesNotThrow(() => assertPackSourceAllowed('claude', root));
+  // 88 write targets: 1 CLAUDE.md + 1 rule file + 86 skills.
+  const routeIds = fs.readdirSync(path.join(root, 'routes')).filter(n => /^cha-.*\.md$/.test(n));
+  const leaves = fs.readdirSync(path.join(root, 'routes', 'leaves')).filter(n => n.endsWith('.md') && n !== 'INDEX.md');
+  assert.equal(routeIds.length, 6);
+  assert.equal(leaves.length, 80);
+  assert.equal(fs.readdirSync(path.join(root, 'skills-rendered')).length, 86);
+  const packText = fs.readFileSync(path.join(root, 'CLAUDE.md.cha-block.md'), 'utf8');
+  assert.ok(packText.includes('<!-- CHA-CLAUDE-POJIA:BEGIN -->'));
+  assert.ok(packText.includes('<!-- CHA-CLAUDE-POJIA:END -->'));
+});
+
 // Explicit opt-in: checks the actual packed trees, not installed user profiles.
 // No fixtures are created, no payload imports/eval/spawn, no dependencies.
 const realTreeOptions = { skip: process.env.DANGO_TEST_REAL_PACKS !== '1' && 'set DANGO_TEST_REAL_PACKS=1 for read-only real-tree checks' };
-test('real filesystem: all five release trees pass the source guard', realTreeOptions, async (t) => {
+test('real filesystem: all six release trees pass the source guard', realTreeOptions, async (t) => {
   for (const id of policy.RELEASE_PACK_IDS) {
     await t.test(id, (sub) => {
       const root = path.join(__dirname, '..', 'packed-packs', id);

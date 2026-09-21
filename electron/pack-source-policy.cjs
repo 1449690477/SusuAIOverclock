@@ -2,7 +2,16 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { assertPackAllowed, getSourceNameBlockReason } = require('./security-policy.cjs');
+const { assertPackAllowed, getSourceNameMatchId, hasQuarantineConsent, QUARANTINED_PACKS } = require('./security-policy.cjs');
+
+// 来源名命中隔离名单时的判定：只有"命中的隔离 id 正是本次请求的 id，且该 id
+// 已登记知情同意"才放行。拿 A 包的同意去部署 B 包的来源目录仍然拒绝。
+function sourceNameReason(id, name) {
+  const matched = getSourceNameMatchId(name);
+  if (!matched) return null;
+  if (matched === id && hasQuarantineConsent(id)) return null;
+  return QUARANTINED_PACKS[matched];
+}
 
 function sourceError(code, source, message) {
   const error = new Error(`${message} [来源: ${source}]`);
@@ -40,7 +49,7 @@ function assertPackSourceAllowed(id, source) {
   const absolute = path.resolve(source);
   assertNoLinkAncestors(absolute);
   for (const name of [absolute, fs.realpathSync(absolute)]) {
-    const reason = getSourceNameBlockReason(name);
+    const reason = sourceNameReason(id, name);
     if (reason) throw sourceError('ERR_PACK_SOURCE_QUARANTINED', name, reason);
   }
   const pending = [{ name: absolute, depth: 0 }];
@@ -48,7 +57,7 @@ function assertPackSourceAllowed(id, source) {
   while (pending.length) {
     const { name, depth } = pending.pop();
     if (++count > 100000 || depth > 64) throw new Error('来源检查超过范围，未确认的来源禁止部署或复制');
-    const reason = getSourceNameBlockReason(path.basename(name));
+    const reason = sourceNameReason(id, path.basename(name));
     if (reason) throw sourceError('ERR_PACK_SOURCE_QUARANTINED', name, reason);
     const stat = fs.lstatSync(name);
     // Junctions/symlinks could redirect copies or scripts outside the checked tree.

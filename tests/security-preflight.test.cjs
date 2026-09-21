@@ -12,7 +12,7 @@ const root = path.join(__dirname, '..');
 test('build allowlist matches runtime policy and exact resource filters', () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
   const lock = JSON.parse(fs.readFileSync(path.join(root, 'package-lock.json'), 'utf8'));
-  assert.equal(pkg.version, '1.5.5');
+  assert.equal(pkg.version, '1.5.6');
   assert.equal(lock.version, pkg.version);
   assert.equal(lock.packages[''].version, pkg.version);
   assert.equal(pkg.devDependencies.electron, '44.4.3');

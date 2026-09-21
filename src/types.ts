@@ -1,4 +1,4 @@
-export type Accent = 'sakura' | 'matcha' | 'yuzu' | 'kuromi' | 'soda' | 'grape' | 'tiger';
+export type Accent = 'sakura' | 'matcha' | 'yuzu' | 'kuromi' | 'soda' | 'grape' | 'tiger' | 'indigo' | 'clay';
 
 export type BaselineResult = 'untracked' | 'recorded' | 'unchanged' | 'changed';
 
@@ -29,6 +29,12 @@ export interface Pack {
   /** quarantined=策略隔离，不解析旧载荷目录 */
   source?: 'imported' | 'external' | 'embedded' | 'none' | 'quarantined';
   blockedReason: string | null;
+  /** 是否需要勾选知情同意才解锁（隔离旧载荷） */
+  consentRequired?: boolean;
+  /** 是否已登记知情同意（落盘在 state.json） */
+  consented?: boolean;
+  consentLabel?: string | null;
+  consentNotice?: string | null;
   found: boolean;
   version: string | null;
   versionSource: string | null;
@@ -59,6 +65,9 @@ export interface Hub {
   prefs: { autoRefresh: boolean };
   activity: ActivityItem[];
   packs: Pack[];
+  /** 已登记知情同意的隔离包 id 列表 */
+  consents?: string[];
+  consentLabel?: string;
   appVersion: string;
   userDir: string;
   embeddedRoot?: string | null;
@@ -109,6 +118,8 @@ export interface PlanInfo {
   hasUninstall: boolean;
   installFile: string | null;
   uninstallFile: string | null;
+  consentRequired?: boolean;
+  consented?: boolean;
 }
 
 export interface DeployResult {
@@ -347,6 +358,7 @@ export interface DangoApi {
   openExternal: (url: string) => Promise<{ ok: boolean; error?: string }>;
 
   detect: () => Promise<{ platforms: Record<string, PlatformInfo>; breaks: Record<string, BreakStatus>; plans: Record<string, PlanInfo> }>;
+  setConsent: (id: string, granted: boolean) => Promise<Hub>;
   getIcon: (id: string) => Promise<{ id: string; dataUrl: string | null }>;
   verifyBreak: (id: string) => Promise<BreakStatus>;
   verifyDeep: (id: string) => Promise<DeepVerifyResult>;

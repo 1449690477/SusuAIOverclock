@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, FolderOpen, ShieldCheck, RefreshCcw, Trash2, Download, Save, Radar } from 'lucide-react';
+import { X, FolderOpen, ShieldCheck, RefreshCcw, Trash2, Download, Save, Radar, AlertTriangle } from 'lucide-react';
 import type { Pack, PlatformInfo, BreakStatus, PlanInfo } from '../types';
 import { baselineClass, BASELINE_LABEL, formatBytes, formatTime } from '../utils';
 
@@ -36,7 +36,8 @@ export default function PackDetailModal({
   onDeploy,
   onBackup,
   onVerifyBreak,
-  onDeepVerify
+  onDeepVerify,
+  onConsent
 }: {
   pack: Pack;
   platform?: PlatformInfo;
@@ -52,10 +53,13 @@ export default function PackDetailModal({
   onBackup: (id: string) => void;
   onVerifyBreak: (id: string) => void;
   onDeepVerify: (id: string) => void;
+  onConsent?: (id: string, granted: boolean) => void;
 }) {
   const d = pack.lastChanges;
   const active = breakStatus?.active;
   const blockedReason = pack.blockedReason || plan?.blockedReason;
+  const consentRequired = Boolean(pack.consentRequired);
+  const consented = Boolean(pack.consented);
 
   return (
     <div className="overlay" onClick={onClose} data-testid="pack-detail-modal">
@@ -72,7 +76,36 @@ export default function PackDetailModal({
           </button>
         </div>
 
-        {blockedReason ? <div className="warn-box" role="status">已隔离 · 载荷操作禁用。{blockedReason}</div> : pack.note ? <div className="note-box">{pack.note}</div> : null}
+        {consentRequired ? (
+          <div className={`consent-box${consented ? ' consent-ok' : ''}`} data-testid={`detail-consent-${pack.id}`}>
+            <div className="consent-head">
+              <AlertTriangle size={12} />
+              {consented ? '已登记知情同意 · 隔离已解除' : '该载荷已隔离 · 需勾选知情同意'}
+            </div>
+            {pack.consentNotice ? <p className="consent-notice">{pack.consentNotice}</p> : null}
+            <label className="consent-tick">
+              <input
+                type="checkbox"
+                checked={consented}
+                disabled={busy || !onConsent}
+                onChange={(e) => onConsent?.(pack.id, e.target.checked)}
+                data-testid={`detail-consent-check-${pack.id}`}
+              />
+              <span>{pack.consentLabel || '我知晓 同意'}</span>
+            </label>
+            {blockedReason ? (
+              <div className="consent-block" data-testid={`detail-quarantine-${pack.id}`}>
+                {blockedReason}
+              </div>
+            ) : null}
+          </div>
+        ) : blockedReason ? (
+          <div className="warn-box" role="status">
+            已隔离 · 载荷操作禁用。{blockedReason}
+          </div>
+        ) : pack.note ? (
+          <div className="note-box">{pack.note}</div>
+        ) : null}
 
         <div className="block">
           <h4>目标平台</h4>
@@ -90,7 +123,15 @@ export default function PackDetailModal({
             <div className="kv-item">
               <div className="kv-k">破甲是否生效</div>
               <div className="kv-v">
-                {blockedReason ? '已隔离（不是安全认证）' : active === true ? '已生效' : active === false ? '未生效' : '无判定依据'}
+                {blockedReason
+                  ? '已隔离（不是安全认证）'
+                  : consented
+                    ? '已解锁（不是安全认证）'
+                    : active === true
+                      ? '已生效'
+                      : active === false
+                        ? '未生效'
+                        : '无判定依据'}
               </div>
             </div>
             <div className="kv-item">
@@ -118,13 +159,14 @@ export default function PackDetailModal({
 
         <div className="note-box">
           {blockedReason ? '仅保留平台检测、状态查看与独立的普通文本词库管理；不运行旧卸载程序，不恢复旧备份，也不删除用户目录或原始证据。' :
+            consented ? '已登记知情同意：安装、卸载、备份、恢复与深度验证已按该隔离包的旧脚本解锁。解锁不是安全认证——用户目录清理状态与原始证据不受影响，受影响文件也仍需自行处置。' :
             <>安装与卸载会执行允许包的<strong>自带脚本</strong>（{plan?.installFile || '无'} / {plan?.uninstallFile || '无'}）。备份、恢复及词库管理会写盘，执行日志与退出码可查看。</>}
         </div>
 
         <div className="kv">
           <div className="kv-item">
             <div className="kv-k">目录</div>
-            <div className="kv-v">{blockedReason ? '已隔离，不解析载荷' : pack.found ? '已找到' : '未找到'}</div>
+            <div className="kv-v">{blockedReason ? '已隔离，不解析载荷' : consented ? '已解锁，按普通包扫描' : pack.found ? '已找到' : '未找到'}</div>
           </div>
           <div className="kv-item">
             <div className="kv-k">版本</div>
@@ -160,11 +202,11 @@ export default function PackDetailModal({
           <h4>两个独立状态（不合并）</h4>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <span className={`badge ${pack.found ? 'badge-ok' : 'badge-muted'}`}>
-              目录：{blockedReason ? '已隔离' : pack.found ? '已找到' : '未找到'}
+              目录：{blockedReason ? '已隔离' : consented ? '已解锁' : pack.found ? '已找到' : '未找到'}
             </span>
             <span className={baselineClass(pack.lastResult)}>校验：{BASELINE_LABEL[pack.lastResult]}</span>
             <span className={`badge ${active === true ? 'badge-ok' : active === false ? 'badge-warn' : 'badge-muted'}`}>
-              载荷：{blockedReason ? '已停用' : active === true ? '已生效' : active === false ? '未生效' : '无判定'}
+              载荷：{blockedReason ? '已停用' : consented ? '已解锁' : active === true ? '已生效' : active === false ? '未生效' : '无判定'}
             </span>
           </div>
         </div>

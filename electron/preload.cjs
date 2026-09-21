@@ -25,6 +25,7 @@ contextBridge.exposeInMainWorld('dango', {
 
   // 部署引擎
   detect: () => ipcRenderer.invoke('dango:detect'),
+  setConsent: (id, granted) => ipcRenderer.invoke('dango:setConsent', id, Boolean(granted)),
   getIcon: (id) => ipcRenderer.invoke('dango:getIcon', id),
   verifyBreak: (id) => ipcRenderer.invoke('dango:verifyBreak', id),
   verifyDeep: (id) => ipcRenderer.invoke('dango:verifyDeep', id),

@@ -15,22 +15,23 @@ const path = require('node:path');
 const os = require('node:os');
 const crypto = require('node:crypto');
 const { execFileSync } = require('node:child_process');
-const { RELEASE_PACK_IDS, QUARANTINED_PACKS, getPackBlockReason, assertPackAllowed } = require('./security-policy.cjs');
+const { RELEASE_PACK_IDS, QUARANTINED_PACKS, getPackBlockReason, assertPackAllowed, hasQuarantineConsent } = require('./security-policy.cjs');
 const { assertPackSourceAllowed, missingExpectedEntries } = require('./pack-source-policy.cjs');
 
 const SKIP_DIRS = new Set(['node_modules', '.git', '.cache', '__pycache__', '.venv', 'venv']);
 const MAX_CHANGE_ITEMS = 200;
 
 /**
- * 平台展示定义：五个发布包，三个已隔离的旧载荷仅保留说明与平台检测。
+ * 平台展示定义：六个发布包，三个已隔离的旧载荷保留说明与平台检测；
+ * 隔离包不再"强制只读"——登记知情同意后解锁安装/卸载/备份/深度验证。
  * expected 支持 * 通配（前缀匹配），用于 install-manifest-*.json 这类带时间戳的文件。
  * version 来源按顺序尝试，第一个命中的生效，并把来源一并回报给 UI（不猜、不编造）。
  */
 const PACKS = [
   {
     id: 'codex',
-    name: 'Codex 冷咖啡石井 · 旧载荷已隔离',
-    subtitle: '安全隔离 · 仅平台查看与普通文本词库管理',
+    name: 'Codex 冷咖啡石井 · 旧载荷（已隔离）',
+    subtitle: '知情同意后可安装 · 受影响的 slo-runtime-hook.exe 见隔离说明',
     folder: 'codex',
     target: 'Codex CLI / 桌面端',
     accent: 'sakura',
@@ -44,8 +45,8 @@ const PACKS = [
   },
   {
     id: 'codex-panghu',
-    name: 'Codex 胖虎 · 旧载荷已隔离',
-    subtitle: '安全隔离 · 禁止运行随包 Python 与启动器',
+    name: 'Codex 胖虎 · 旧载荷（已隔离）',
+    subtitle: '知情同意后可安装 · 禁止运行随包 Python 与启动器',
     folder: 'codex-panghu',
     target: 'Codex CLI / 桌面端',
     accent: 'tiger',
@@ -107,6 +108,24 @@ const PACKS = [
       { kind: 'firstLines', file: 'README-CN.txt', maxLines: 80, pattern: 'v(\\d+\\.\\d+\\.\\d+)' },
       { kind: 'firstLines', file: 'install.ps1', maxLines: 10, pattern: 'v(\\d+)\\b' }
     ]
+  },
+  {
+    id: 'claude',
+    name: 'Claude Code 破甲包',
+    subtitle: '冷咖啡 CHA · Claude 席位独立注入器',
+    folder: 'claude',
+    target: 'Claude Code',
+    accent: 'clay',
+    note: '冷咖啡 v2.3.6 Claude 席位：CLAUDE.md 标记块 + rules/cha-breakopen.md + 86 个 SKILL.md（6 父路由 / 80 叶子）。install-claude.py 直装并首次自动备份，卸载按备份与标记精准回滚。',
+    expected: [
+      'install-claude.py',
+      'CLAUDE.md.cha-block.md',
+      'routes',
+      'routes/leaves',
+      'workflows',
+      'README-CN.txt'
+    ],
+    versionSources: [{ kind: 'firstLines', file: 'README-CN.txt', maxLines: 8, pattern: 'v(\\d+\\.\\d+\\.\\d+)' }]
   },
   {
     id: 'opencode',
@@ -185,8 +204,8 @@ const PACKS = [
   },
   {
     id: 'anti-gravity',
-    name: '反重力 · 旧载荷已隔离',
-    subtitle: '安全隔离 · 禁止运行旧代理载荷',
+    name: '反重力 · 旧载荷（已隔离）',
+    subtitle: '知情同意后可安装 · 禁止运行旧代理载荷',
     folder: 'anti-gravity',
     target: 'Google Antigravity',
     accent: 'grape',
@@ -769,9 +788,12 @@ function driveRoots() {
  * 监控侧也必须跟得上，否则装在 D 盘的破甲会被误判成"未安装"。
  * 解析顺序：环境变量 > 默认位置 > 各盘符常见位置；都没有时返回默认位（让 evidence 如实报 false）。
  */
-function resolvePlatformHome(envName, dirName, markerFiles) {
-  const envVal = envName ? process.env[envName] : null;
-  if (envVal && String(envVal).trim() && isDirSync(String(envVal).trim())) return String(envVal).trim();
+function resolvePlatformHome(envName, dirName, markerFiles, envNameAlt) {
+  // 备选环境变量用于 claude：注入器认 CLAUDE_CONFIG_DIR → CLAUDE_HOME，探测顺序必须一致
+  for (const name of [envName, envNameAlt]) {
+    const envVal = name ? process.env[name] : null;
+    if (envVal && String(envVal).trim() && isDirSync(String(envVal).trim())) return String(envVal).trim();
+  }
 
   const def = path.join(HOME, dirName);
   if (isDirSync(def)) return def;
@@ -807,6 +829,11 @@ function codexHome() {
 
 function dshHome() {
   return resolvePlatformHome('DSH_HOME', '.dsh', ['AGENTS.md', 'plugins']);
+}
+
+function claudeHome() {
+  // 顺序与 install-claude.py 的 resolve_home 对齐：CLAUDE_CONFIG_DIR → CLAUDE_HOME → ~/.claude
+  return resolvePlatformHome('CLAUDE_CONFIG_DIR', '.claude', ['CLAUDE.md', 'rules', 'skills'], 'CLAUDE_HOME');
 }
 
 function workbuddyHome() {
@@ -880,6 +907,22 @@ const PLATFORM_PROBES = {
     exes: [],
     configDirs: [path.join(HOME, '.dsh')],
     matchNames: []
+  },
+  claude: {
+    displayName: 'Claude Code',
+    installDirs: [
+      // npm 全局安装：claude.cmd 在 %APPDATA%\npm，真实可执行映像在 node_modules 下
+      path.join(APPDATA, 'npm', 'node_modules', '@anthropic-ai', 'claude-code', 'bin'),
+      path.join(LOCALAPPDATA, 'Programs', 'claude'),
+      path.join(LOCALAPPDATA, 'Programs', 'Claude'),
+      path.join(LOCALAPPDATA, 'Claude'),
+      path.join(HOME, '.claude', 'local'),
+      path.join(PROGRAMFILES, 'Claude'),
+      path.join(PROGRAMFILES_X86, 'Claude')
+    ],
+    exes: ['claude.exe', 'claude.cmd'],
+    configDirs: [path.join(HOME, '.claude')],
+    matchNames: ['claude', 'anthropic']
   },
   opencode: {
     displayName: 'OpenCode',
@@ -962,8 +1005,9 @@ function scanExeWide(exeNames) {
 }
 
 /**
- * 部署计划：隔离包没有安装/卸载/备份目标，仅保留历史只读证据定义。
- * evidence 判定"破甲是否生效"，全部来自实际侦察（不是猜的）：
+ * 部署计划：隔离包在本表里没有发布中的安装/卸载/备份目标（保持 install:null）。
+ * 它们恢复出来的旧计划放在下面的 LEGACY_QUARANTINE_PLANS，只有登记知情同意后
+ * 才由 deployPlanFor(id) 返回。evidence 判定"破甲是否生效"，全部来自实际侦察（不是猜的）：
  *   file     目录下存在该文件
  *   dir      该目录存在
  *   contains 文件里能匹配到特征串
@@ -1051,6 +1095,36 @@ const DEPLOY_PLANS = {
         type: 'dir',
         path: path.join(dshHome(), 'plugins', '@dsh-external', 'dsh-shield'),
         label: 'dsh-shield 插件已注入'
+      }
+    ]
+  },
+  claude: {
+    // install-claude.py 直装：零依赖，首次写入自动备份到 ~/.claude/cha-backups
+    install: { file: 'install-claude.py', kind: 'py', args: ['inject'] },
+    uninstall: { file: 'install-claude.py', kind: 'py', args: ['restore'] },
+    backupDirs: [claudeHome()],
+    evidence: [
+      {
+        type: 'contains',
+        path: path.join(claudeHome(), 'CLAUDE.md'),
+        pattern: 'CHA-CLAUDE-POJIA:BEGIN',
+        label: '~/.claude/CLAUDE.md 含冷咖啡标记块'
+      },
+      {
+        type: 'contains',
+        path: path.join(claudeHome(), 'rules', 'cha-breakopen.md'),
+        pattern: 'CHA-CLAUDE-POJIA:BEGIN',
+        label: '~/.claude/rules/cha-breakopen.md 常驻通道'
+      },
+      {
+        type: 'dir',
+        path: path.join(claudeHome(), 'skills', 'cha-bin-unlock'),
+        label: '~/.claude/skills/cha-bin-unlock 父路由已注入'
+      },
+      {
+        type: 'dir',
+        path: path.join(claudeHome(), 'skills', 'cha-inkstage'),
+        label: '~/.claude/skills/cha-inkstage 父路由已注入'
       }
     ]
   },
@@ -1142,6 +1216,46 @@ for (const id of Object.keys(QUARANTINED_PACKS)) {
 }
 Object.freeze(DEPLOY_PLANS);
 
+/**
+ * 隔离包恢复出来的旧部署计划（逐字取自 v1.5.4 的 DEPLOY_PLANS）。
+ * 它们不参与发布：只有 hasQuarantineConsent(id) 为真时 deployPlanFor(id) 才返回，
+ * 也就是用户必须在卡片上勾选「我知晓 同意」并落盘之后才可能被调用。
+ * 未勾选时 deployPlanFor(id) 仍然返回 DEPLOY_PLANS[id]（install:null），
+ * 所以 buildSpawn / 主进程都拿不到脚本，等于维持强制隔离。
+ */
+const LEGACY_QUARANTINE_PLANS = {
+  codex: {
+    install: { file: 'install-replica.ps1', kind: 'ps1', args: ['-NoOpenLinks', '-SkipAstra6'] },
+    uninstall: { file: 'Uninstall.ps1', kind: 'ps1' },
+    backupDirs: [codexHome()]
+  },
+  'codex-panghu': {
+    install: { file: 'install.ps1', kind: 'ps1', args: ['-Action', 'install'] },
+    uninstall: { file: 'install.ps1', kind: 'ps1', args: ['-Action', 'uninstall'] },
+    backupDirs: [codexHome()]
+  },
+  'anti-gravity': {
+    install: { file: 'Install-AntiGravity.ps1', kind: 'ps1', args: ['-NoOpenLinks'] },
+    uninstall: { file: 'Uninstall.ps1', kind: 'ps1' },
+    backupDirs: [path.join(HOME, '.gemini')]
+  }
+};
+for (const id of Object.keys(LEGACY_QUARANTINE_PLANS)) Object.freeze(LEGACY_QUARANTINE_PLANS[id].backupDirs);
+for (const id of Object.keys(LEGACY_QUARANTINE_PLANS)) Object.freeze(LEGACY_QUARANTINE_PLANS[id]);
+Object.freeze(LEGACY_QUARANTINE_PLANS);
+
+/** 生效计划：隔离包在未登记同意时永远返回 DEPLOY_PLANS 里的空计划。 */
+function deployPlanFor(id) {
+  const legacy = LEGACY_QUARANTINE_PLANS[id];
+  if (legacy && hasQuarantineConsent(id)) return legacy;
+  return DEPLOY_PLANS[id] || {};
+}
+
+/** 该包是否属于"需勾选知情同意才解锁"的隔离包。 */
+function isConsentPack(id) {
+  return Object.prototype.hasOwnProperty.call(QUARANTINED_PACKS, id);
+}
+
 function detectPlatform(id) {
   const probe = PLATFORM_PROBES[id];
   const out = {
@@ -1203,6 +1317,7 @@ function detectPlatform(id) {
     codex: () => [codexHome()],
     'codex-panghu': () => [codexHome()],
     dsh: () => [dshHome()],
+    claude: () => [claudeHome()],
     workbuddy: () => [workbuddyHome()],
     'workbuddy-ai': () => [workbuddyAiHome()],
     opencode: () => [opencodeConfigHome(), path.join(APPDATA, 'ai.opencode.desktop')]
@@ -1305,6 +1420,25 @@ const BRAND_ICONS = {
       <path d="M17 18 L11 24 L17 30" stroke="url(#oc-c)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
       <path d="M31 18 L37 24 L31 30" stroke="url(#oc-c)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
       <line x1="26" y1="15" x2="22" y2="33" stroke="#FF007F" stroke-width="2.5" stroke-linecap="round"/>
+    </svg>
+  `),
+  claude: svgToDataUrl(`
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
+      <defs>
+        <linearGradient id="cl-g" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#E08A66"/>
+          <stop offset="100%" stop-color="#B05A38"/>
+        </linearGradient>
+      </defs>
+      <rect width="48" height="48" rx="12" fill="url(#cl-g)"/>
+      <g stroke="#FFFFFF" stroke-width="2.6" stroke-linecap="round" transform="rotate(22.5 24 24)">
+        <line x1="24" y1="12.5" x2="24" y2="35.5"/>
+        <line x1="12.5" y1="24" x2="35.5" y2="24"/>
+        <line x1="15.9" y1="15.9" x2="32.1" y2="32.1"/>
+        <line x1="32.1" y1="15.9" x2="15.9" y2="32.1"/>
+      </g>
+      <circle cx="24" cy="24" r="4.2" fill="#FFFFFF"/>
+      <circle cx="24" cy="24" r="1.8" fill="#B05A38"/>
     </svg>
   `),
   workbuddy: svgToDataUrl(`
@@ -1412,7 +1546,7 @@ function resolvePythonBin() {
 
 function buildSpawn(script, packPath, id) {
   assertPackAllowed(id);
-  const plan = DEPLOY_PLANS[id];
+  const plan = deployPlanFor(id);
   if (!script || (script !== plan.install && script !== plan.uninstall)) throw new Error('不是该包的发布部署计划');
   assertPackSourceAllowed(id, packPath);
   const full = path.join(packPath, script.file);
@@ -1488,6 +1622,47 @@ function isCliVerifyInfrastructureError(text) {
   return /not inside a trusted directory|skip-git-repo-check|reading additional input from stdin|failed to read.*stdin|stdin.*not.*trusted/i.test(
     String(text || '')
   );
+}
+
+/**
+ * Claude Code CLI 的 L4 验证参数：`-p` 走非交互打印模式，只回一句就退出。
+ * 同样在临时目录里跑，不读 stdin，不加任何会写盘的开关。
+ */
+function buildClaudeVerifyArgs(cwd, prompt = VERIFY_PROMPT) {
+  return ['-p', String(prompt)];
+}
+
+/**
+ * 定位 claude CLI（只查文件，不执行）。npm 全局装的 claude.cmd 是 shim，
+ * 它旁边的 node_modules/@anthropic-ai/claude-code/bin/claude.exe 才是可执行映像。
+ */
+function findClaudeCliInfo() {
+  const probe = detectPlatform('claude');
+  if (probe.exePath) return { path: probe.exePath, via: probe.exeVia || 'installDir' };
+  const shim = path.join(APPDATA, 'npm', 'claude.cmd');
+  if (existsSyncPath(shim)) return { path: shim, via: 'npm-global-shim' };
+  return { path: null, via: null };
+}
+
+/**
+ * L4 CLI 通道登记表：每家的"版本探测参数"与"无副作用问答参数"不同，
+ * 所以按 id 分开，probeRuntime / 主进程都从这里取，不再硬编码 codex。
+ */
+const CLI_CHANNELS = {
+  codex: {
+    findExe: () => findCodexCliInfo(),
+    versionArgs: ['--version'],
+    buildVerifyArgs: (cwd, prompt) => buildCliVerifyArgs(cwd, prompt)
+  },
+  claude: {
+    findExe: () => findClaudeCliInfo(),
+    versionArgs: ['--version'],
+    buildVerifyArgs: (cwd, prompt) => buildClaudeVerifyArgs(cwd, prompt)
+  }
+};
+
+function cliChannelFor(id) {
+  return CLI_CHANNELS[id] || null;
 }
 
 /**
@@ -1673,6 +1848,44 @@ const CONFIG_CHECKS = {
     return { ok, detail: ok ? '配置就绪' : items.find((i) => !i.ok).label, items };
   },
 
+  claude() {
+    const dir = claudeHome();
+    const items = [];
+
+    // install-claude.py 只往 CLAUDE.md 追加一个受管标记块，块内是 Claude 席位入口
+    const md = path.join(dir, 'CLAUDE.md');
+    let hasMark = false;
+    if (existsSyncPath(md)) {
+      try {
+        hasMark = /CHA-CLAUDE-POJIA:BEGIN/.test(fs.readFileSync(md, 'utf8'));
+      } catch {
+        hasMark = false;
+      }
+    }
+    items.push({ ok: hasMark, label: 'CLAUDE.md 含 CHA-CLAUDE-POJIA 标记块', detail: md });
+
+    // 常驻通道
+    const breakopen = path.join(dir, 'rules', 'cha-breakopen.md');
+    items.push({ ok: isFileSync(breakopen), label: 'rules/cha-breakopen.md 常驻通道', detail: breakopen });
+
+    // 按需通道：86 个席位 SKILL.md 落在 skills/cha-*
+    const skillsDir = path.join(dir, 'skills');
+    let skillHit = false;
+    if (isDirSync(skillsDir)) {
+      try {
+        skillHit = fs.readdirSync(skillsDir).some(
+          (n) => /^cha-/i.test(n) && isFileSync(path.join(skillsDir, n, 'SKILL.md'))
+        );
+      } catch {
+        skillHit = false;
+      }
+    }
+    items.push({ ok: skillHit, label: 'skills/cha-* 席位技能已注入', detail: skillsDir });
+
+    const ok = items.every((i) => i.ok);
+    return { ok, detail: ok ? '配置就绪' : items.find((i) => !i.ok).label, items };
+  },
+
   'anti-gravity'() {
     const cfg = path.join(HOME, '.gemini', 'config');
     const items = [];
@@ -1809,18 +2022,19 @@ function findGuiExe(id) {
 function probeRuntime(id) {
   assertPackAllowed(id);
   const probe = PLATFORM_PROBES[id] || {};
-  const chan = L4_CHANNELS[id] || { mode: 'gui' };
+  const chan = l4ChannelFor(id);
   const mode = chan.mode || 'gui';
 
   if (mode === 'cli') {
-    const info = findCodexCliInfo();
+    const cli = cliChannelFor(id);
+    const info = cli ? cli.findExe() : findCodexCliInfo();
     if (info.path) {
       return { ok: true, mode: 'cli', exe: info.path, soft: false, label: 'CLI 已定位', detail: `${info.path}${info.via ? `（来源：${info.via}）` : ''}` };
     }
-    // CLI 缺失 → 回退 Codex 桌面客户端通道（有客户端也能验证，不必判失败）
+    // CLI 缺失 → 回退客户端通道（有客户端也能验证，不必判失败）
     const gui = findGuiExe(id);
     if (gui) {
-      return { ok: true, mode: 'gui', exe: gui, soft: true, label: '未找到 codex CLI，回退客户端通道', detail: gui };
+      return { ok: true, mode: 'gui', exe: gui, soft: true, label: `未找到 ${chan.cliName || 'CLI'}，回退客户端通道`, detail: gui };
     }
     const running = runningExeName(probe.exes || []);
     if (running) {
@@ -1831,8 +2045,8 @@ function probeRuntime(id) {
       mode: 'cli',
       exe: null,
       soft: false,
-      label: '未找到 codex CLI 或桌面客户端',
-      detail: '已查：%LOCALAPPDATA%\\OpenAI、~/.codex、npm/Yarn/scoop 全局、PATH、Program Files'
+      label: `未找到 ${chan.cliName || 'CLI'} 或桌面客户端`,
+      detail: chan.cliHint || '已查：%LOCALAPPDATA%\\OpenAI、~/.codex、npm/Yarn/scoop 全局、PATH、Program Files'
     };
   }
 
@@ -1863,15 +2077,30 @@ function probeRuntime(id) {
 
 /** 每个平台的 L4 通道类型：cli 真发 / gui playwright 拉起 */
 const L4_CHANNELS = {
-  codex: { mode: 'none', note: QUARANTINED_PACKS.codex },
-  'codex-panghu': { mode: 'none', note: QUARANTINED_PACKS['codex-panghu'] },
+  codex: { mode: 'none', consentMode: 'cli', cliName: 'codex CLI', note: QUARANTINED_PACKS.codex },
+  'codex-panghu': { mode: 'none', consentMode: 'cli', cliName: 'codex CLI', note: QUARANTINED_PACKS['codex-panghu'] },
   dsh: { mode: 'gui-note', note: 'DSH 走 npx 临时缓存，无独立 CLI' },
   cursor: { mode: 'gui' },
+  claude: {
+    mode: 'cli',
+    cliName: 'claude CLI',
+    cliHint: '已查：%APPDATA%\\npm\\node_modules\\@anthropic-ai、~/.claude/local、%LOCALAPPDATA%\\Programs、PATH'
+  },
   opencode: { mode: 'gui' },
   workbuddy: { mode: 'gui' },
   'workbuddy-ai': { mode: 'gui' },
-  'anti-gravity': { mode: 'none', note: QUARANTINED_PACKS['anti-gravity'] }
+  'anti-gravity': { mode: 'none', consentMode: 'gui', note: QUARANTINED_PACKS['anti-gravity'] }
 };
+
+/**
+ * 生效通道：隔离包在 mode==='none' 时是"硬跳过"。登记知情同意后改走各自的
+ * consentMode（codex/胖虎 = cli，反重力 = gui），这样隔离解除后深度验证能真正落地。
+ */
+function l4ChannelFor(id) {
+  const chan = L4_CHANNELS[id] || { mode: 'gui' };
+  if (chan.mode === 'none' && chan.consentMode && hasQuarantineConsent(id)) return chan.consentMode === chan.mode ? chan : { ...chan, mode: chan.consentMode };
+  return chan;
+}
 
 /* ==================================================================
    内嵌破甲包 · 软件单体分发
@@ -1977,6 +2206,21 @@ const PLATFORM_SIGNATURES = {
       { re: /\.config[\\/]opencode|shield-protocol/i, weight: 10 }
     ]
   },
+  claude: {
+    fileHints: [
+      { re: /^install-claude\.py$/i, weight: 40 },
+      { re: /^CLAUDE\.md(\.cha-block\.md)?$/i, weight: 28 },
+      { re: /^skills-rendered$/i, weight: 20 },
+      { re: /cha-breakopen/i, weight: 18 },
+      { re: /raw-claude|raw-activation-reply/i, weight: 12 },
+      { re: /claude/i, weight: 8 }
+    ],
+    contentHints: [
+      { re: /CHA-CLAUDE-POJIA|BREAK\/\/OPEN/i, weight: 16 },
+      { re: /\.claude[\\/]|CLAUDE_CONFIG_DIR|install-claude\.py/i, weight: 12 },
+      { re: /claude|anthropic/i, weight: 6 }
+    ]
+  },
   workbuddy: {
     fileHints: [
       { re: /^Install-WB-OneClick\.ps1$/i, weight: 40 },
@@ -2052,6 +2296,11 @@ const RULE_FILE_SIGNATURES = {
     { re: /\.config[\\/]opencode|ai\.opencode\.desktop|shiyi-lock|opencode\.jsonc/i, weight: 16 },
     { re: /opencode/i, weight: 10 },
     { re: /shield-protocol/i, weight: 6 }
+  ],
+  claude: [
+    { re: /\.claude[\\/]|CLAUDE_CONFIG_DIR|CHA-CLAUDE-POJIA|cha-breakopen/i, weight: 18 },
+    { re: /claude|anthropic/i, weight: 10 },
+    { re: /BREAK\/\/OPEN|冷咖啡/i, weight: 6 }
   ],
   workbuddy: [
     { re: /\.workbuddy(?!-ai)[\\/]|workbuddy(?!-ai)/i, weight: 16 },
@@ -2370,6 +2619,11 @@ const RULE_FILE_TARGETS = {
     mode: 'append',
     file: () => path.join(opencodeConfigHome(), 'AGENTS.md'),
     label: '.config/opencode/AGENTS.md（全局指令层）'
+  },
+  claude: {
+    mode: 'append',
+    file: () => path.join(claudeHome(), 'CLAUDE.md'),
+    label: '.claude/CLAUDE.md（全局指令层）'
   },
   'anti-gravity': {
     mode: 'append',
@@ -3018,6 +3272,14 @@ module.exports = {
   probeRuntime,
   runningExeName,
   L4_CHANNELS,
+  l4ChannelFor,
+  CLI_CHANNELS,
+  cliChannelFor,
+  buildClaudeVerifyArgs,
+  findClaudeCliInfo,
+  LEGACY_QUARANTINE_PLANS,
+  deployPlanFor,
+  isConsentPack,
   SKIP_DIRS,
   MAX_CHANGE_ITEMS,
   toPosix,
@@ -3033,6 +3295,7 @@ module.exports = {
   renderReport,
   BRAND_ICONS,
   codexHome,
+  claudeHome,
   dshHome,
   workbuddyHome,
   workbuddyAiHome,

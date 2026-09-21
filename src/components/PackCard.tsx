@@ -1,5 +1,5 @@
 import React from 'react';
-import { FileStack, Hash, Clock, Download, Trash2, ShieldCheck, CircleSlash, Radar } from 'lucide-react';
+import { FileStack, Hash, Clock, Download, Trash2, ShieldCheck, CircleSlash, Radar, AlertTriangle } from 'lucide-react';
 import type { Pack, PlatformInfo, BreakStatus, PlanInfo } from '../types';
 import { baselineClass, BASELINE_LABEL, formatBytes, formatTime } from '../utils';
 
@@ -12,7 +12,8 @@ export default function PackCard({
   busy,
   onOpen,
   onDeploy,
-  onDeepVerify
+  onDeepVerify,
+  onConsent
 }: {
   pack: Pack;
   platform?: PlatformInfo;
@@ -23,9 +24,33 @@ export default function PackCard({
   onOpen: (p: Pack) => void;
   onDeploy: (id: string, action: 'install' | 'uninstall') => void;
   onDeepVerify?: (id: string) => void;
+  onConsent?: (id: string, granted: boolean) => void;
 }) {
   const active = breakStatus?.active;
   const blockedReason = pack.blockedReason || plan?.blockedReason;
+  const consentRequired = Boolean(pack.consentRequired);
+  const consented = Boolean(pack.consented);
+  // 已解锁的隔离包：策略层不再返回 blockedReason，用 consented 单独标记
+  const unlocked = consentRequired && consented && !blockedReason;
+
+  const badgeClass = blockedReason
+    ? 'badge-warn'
+    : unlocked
+      ? 'badge-accent'
+      : active === true
+        ? 'badge-ok'
+        : active === false
+          ? 'badge-warn'
+          : 'badge-muted';
+  const badgeText = blockedReason
+    ? '已隔离 · 只读'
+    : unlocked
+      ? '隔离已解锁'
+      : active === true
+        ? '已生效'
+        : active === false
+          ? '未生效'
+          : '无判定';
 
   return (
     <div
@@ -52,14 +77,46 @@ export default function PackCard({
             {platform?.installed ? ' · 已安装' : ' · 未检测到'}
           </div>
         </div>
-        <span className={`badge ${blockedReason ? 'badge-warn' : active === true ? 'badge-ok' : active === false ? 'badge-warn' : 'badge-muted'}`}>
+        <span className={`badge ${badgeClass}`}>
           {!blockedReason && active === true ? <ShieldCheck size={11} /> : <CircleSlash size={11} />}
-          {blockedReason ? '已隔离 · 只读' : active === true ? '已生效' : active === false ? '未生效' : '无判定'}
+          {badgeText}
         </span>
       </div>
 
       <p className="pack-sub">{pack.subtitle}</p>
-      {blockedReason ? <div className="warn-box" data-testid={`quarantine-${pack.id}`}>{blockedReason}</div> : null}
+
+      {consentRequired ? (
+        <div
+          className={`consent-box${consented ? ' consent-ok' : ''}`}
+          data-testid={`consent-${pack.id}`}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="consent-head">
+            <AlertTriangle size={12} />
+            {consented ? '已登记知情同意 · 隔离已解除' : '该载荷已隔离 · 需勾选知情同意'}
+          </div>
+          {pack.consentNotice ? <p className="consent-notice">{pack.consentNotice}</p> : null}
+          <label className="consent-tick">
+            <input
+              type="checkbox"
+              checked={consented}
+              disabled={busy || !onConsent}
+              onChange={(e) => onConsent?.(pack.id, e.target.checked)}
+              data-testid={`consent-check-${pack.id}`}
+            />
+            <span>{pack.consentLabel || '我知晓 同意'}</span>
+          </label>
+          {blockedReason ? (
+            <div className="consent-block" data-testid={`quarantine-${pack.id}`}>
+              {blockedReason}
+            </div>
+          ) : null}
+        </div>
+      ) : blockedReason ? (
+        <div className="warn-box" data-testid={`quarantine-${pack.id}`}>
+          {blockedReason}
+        </div>
+      ) : null}
 
       <div className="pack-meta">
         <span>
@@ -74,7 +131,9 @@ export default function PackCard({
       </div>
 
       <div className="pack-foot" style={{ flexWrap: 'wrap', gap: 6 }}>
-        <span className={`badge ${pack.found ? 'badge-ok' : 'badge-muted'}`}>{blockedReason ? '载荷已停用' : pack.found ? '目录已找到' : '目录未找到'}</span>
+        <span className={`badge ${blockedReason ? 'badge-muted' : pack.found ? 'badge-ok' : 'badge-muted'}`}>
+          {blockedReason ? '载荷已停用' : unlocked ? '载荷已解锁' : pack.found ? '目录已找到' : '目录未找到'}
+        </span>
         {pack.source && pack.source !== 'none' && pack.source !== 'quarantined' ? (
           <span
             className={`badge ${

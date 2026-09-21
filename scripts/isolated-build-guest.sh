@@ -14,7 +14,7 @@ mkdir -p "$BASE/logs" "$BASE/downloads" "$BASE/toolchain" "$BASE/cache/builder" 
 exec > >(tee "$BASE/logs/${PHASE}-$(date -u +%Y%m%dT%H%M%SZ).log") 2>&1
 trap 'rc=$?; printf "PHASE=%s EXIT=%s UTC=%s\n" "$PHASE" "$rc" "$(date -u +%FT%TZ)"' EXIT
 printf 'PHASE=%s START=%s\n' "$PHASE" "$(date -u +%FT%TZ)"
-printf 'BUILD_ID=%s ELECTRON=44.4.3 APP_VERSION=1.5.5 GUI=pending-new-build\n' "$BUILD_ID"
+printf 'BUILD_ID=%s ELECTRON=44.4.3 APP_VERSION=1.5.6 GUI=pending-new-build\n' "$BUILD_ID"
 export PATH="$BASE/toolchain/node-v22.23.2-linux-x64/bin:/usr/bin:/bin"
 export ELECTRON_BUILDER_CACHE="$BASE/cache/builder"
 export npm_config_cache="$BASE/cache/npm"

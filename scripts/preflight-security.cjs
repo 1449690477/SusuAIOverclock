@@ -28,7 +28,7 @@ const os = require('node:os');
 const crypto = require('node:crypto');
 
 const ROOT = path.resolve(__dirname, '..');
-const RELEASE_PACK_IDS = Object.freeze(['cursor', 'dsh', 'opencode', 'workbuddy', 'workbuddy-ai']);
+const RELEASE_PACK_IDS = Object.freeze(['cursor', 'dsh', 'claude', 'opencode', 'workbuddy', 'workbuddy-ai']);
 const QUARANTINED_PACK_IDS = Object.freeze(['codex', 'codex-panghu', 'anti-gravity']);
 const BINARY_EXTENSIONS = Object.freeze(['.exe', '.dll', '.pyd', '.node', '.scr', '.com', '.dat']);
 const TEXT_SHA256 = 'dd25f3ed5d8024e7712dedb739ba9601a22fa1c088db9fbb10e5e47faa4c9932';
@@ -376,12 +376,12 @@ function validateBuildPolicy(root, report) {
   };
   const pkg = readJson(path.join(root, 'package.json'));
   const lock = readJson(path.join(root, 'package-lock.json'));
-  if (pkg.version !== '1.5.5' || lock.version !== pkg.version || lock.packages?.['']?.version !== pkg.version) throw new Error('Release package/lock versions must all be 1.5.5');
+  if (pkg.version !== '1.5.6' || lock.version !== pkg.version || lock.packages?.['']?.version !== pkg.version) throw new Error('Release package/lock versions must all be 1.5.6');
   if (pkg.devDependencies?.electron !== '44.4.3' || lock.packages?.['']?.devDependencies?.electron !== '44.4.3' || lock.packages?.['node_modules/electron']?.version !== '44.4.3') throw new Error('Final supported runtime must be pinned to official Electron 44.4.3 in package and lock');
   const resources = pkg.build?.extraResources;
   const packs = Array.isArray(resources) ? resources.filter(item => item && item.from === 'packed-packs') : [];
   if (packs.length !== 1 || packs[0].to !== 'packs' || JSON.stringify(packs[0].filter) !== JSON.stringify(RELEASE_RESOURCE_FILTER)) {
-    throw new Error('packed-packs resource filter must exactly match the five-pack release allowlist and exclusions');
+    throw new Error('packed-packs resource filter must exactly match the six-pack release allowlist and exclusions');
   }
   if (pkg.build?.nsis?.packElevateHelper !== false) throw new Error('The unused elevate helper must remain disabled');
   if (pkg.build?.beforePack !== './scripts/before-build.cjs' || pkg.build?.beforeBuild || pkg.build?.npmRebuild !== false) throw new Error('beforePack security gate and npmRebuild:false are mandatory');

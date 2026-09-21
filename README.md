@@ -2,29 +2,29 @@
 
 # 苏苏 AI超频 · Susu AI Overclock
 
-**8 张平台卡片 · 5 个发布允许清单包 · 3 条部署路线安全隔离**
+**9 张平台卡片 · 6 个发布允许清单包 · 3 条旧载荷知情同意解锁**
 
 Windows x64 本地隔离构建 · Electron 44.4.3 + React 18 + TypeScript 5 · 冰蓝瓷白界面
 
 ![Platform](https://img.shields.io/badge/platform-Windows%20x64-0078D4?style=flat-square)
 [![Electron](https://img.shields.io/badge/Electron-44.4.3-47848F?style=flat-square&logo=electron&logoColor=white)](https://www.electronjs.org/)
 [![React](https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react&logoColor=black)](https://react.dev/)
-[![Version](https://img.shields.io/badge/1.5.5-local%20build%20%7C%20AV%20warnings-orange?style=flat-square)](./docs/SECURITY-1.5.5.md)
+[![Version](https://img.shields.io/badge/1.5.6-source%20ready%20%7C%20build%20pending-blue?style=flat-square)](./CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-MIT-97CA00?style=flat-square)](./LICENSE)
 
-**1.5.5 / Electron 44.4.3 已完成本地虚拟机隔离构建，仅以 ZIP 交付，未发布到 GitHub。**
+**1.5.6 源码与策略已就绪（六发布包 + 三条旧载荷可勾选解锁 + Claude Code 破甲包），全套自动化测试通过；二进制产物必须在隔离构建环境产出 —— 本机预检按设计拒绝在受感染宿主上构建。**
 
-**杀毒告警仍未解除：ClamAV 报告 29 个 Infected files、54 条告警，不能称 AV 通过或无病毒。Windows 宿主仍受感染。**
+**1.5.5 的杀毒告警仍未解除：ClamAV 报告 29 个命中文件（安全案例文档 / 示例代码 / 词库的内容签名），不能称 AV 通过或无病毒。Windows 宿主仍受感染。**
 
-[本地交付 ZIP：SusuAIOverclock-1.5.5-portable-electron44.4.3-isolated.zip](./release/SusuAIOverclock-1.5.5-portable-electron44.4.3-isolated.zip)（不是公开下载发布或运行放行）
+[1.5.5 本地交付 ZIP：SusuAIOverclock-1.5.5-portable-electron44.4.3-isolated.zip](./release/SusuAIOverclock-1.5.5-portable-electron44.4.3-isolated.zip)（1.5.6 产物待隔离环境构建）
 
-[安全报告](./docs/SECURITY-1.5.5.md) · [发布目录可直接阅读的摘要](./release/1.5.5-SECURITY-REPORT.md)
+[1.5.5 安全报告](./docs/SECURITY-1.5.5.md) · [1.5.5 发布摘要](./release/1.5.5-SECURITY-REPORT.md) · [1.5.6 更新日志](./CHANGELOG.md)
 
 </div>
 
 ---
 
-## 当前安全状态（2026-09-20）
+## 当前安全状态（2026-09-21）
 
 - 旧 1.5.4 EXE、部分依赖及内嵌包的 `R.exe` / `N.exe` 前置封装证据仍有效，51 个项目文件继续隔离。最终新包未命中这些已知 IOC，但仍有下述内容类杀毒告警，两者不能混同。
 - 经用户后续明确批准在本机隔离打包，已使用专用 VirtualBox 客体、Ubuntu 24.04 官方 20260911 镜像与全新虚拟磁盘，NAT / 回环转发，无共享文件夹或共享剪贴板。**受感染 Windows 宿主及虚拟化层仍是剩余风险，这不是可信宿主证明或系统清理。**
@@ -49,32 +49,33 @@ Windows x64 本地隔离构建 · Electron 44.4.3 + React 18 + TypeScript 5 · �
 
 ## 这是什么
 
-一个 Windows 桌面工作台，在同一界面保留 **8 张平台卡片**。最终 1.5.5 产物实际内嵌 **5 个允许清单包**，另 **3 条包部署路线已隔离**：
+一个 Windows 桌面工作台，在同一界面保留 **9 张平台卡片**。1.5.6 发布允许清单为 **6 个包**（`cursor`、`dsh`、`claude`、`opencode`、`workbuddy`、`workbuddy-ai`），另 **3 条旧载荷改为知情同意解锁**：未勾选「我知晓 同意」时行为与 1.5.5 强制隔离一致，勾选后其安装 / 卸载 / 备份 / 恢复 / 深度验证才解锁，撤销立即回到 fail-closed。
 
-| 卡片 / 包 ID | 包版本记录 | 1.5.5 源码策略 |
+| 卡片 / 包 ID | 包版本记录 | 1.5.6 源码策略 |
 | :-- | :-- | :-- |
-| Codex · 冷咖啡石井（`codex`） | v10.4 | 阻断，等待可信替换来源 |
-| Codex · 胖虎（`codex-panghu`） | v5.0 | 阻断，独立分支，等待可信替换来源 |
+| Codex · 冷咖啡石井（`codex`） | v10.4 | 隔离载荷：默认阻断，勾选「我知晓 同意」后解锁 |
+| Codex · 胖虎（`codex-panghu`） | v5.0 | 隔离载荷：默认阻断，独立分支，勾选后解锁 |
 | Cursor（`cursor`） | 懒人包 v1.2 | 已内嵌，非 AV 放行 |
+| **Claude Code（`claude`）** | **冷咖啡 CHA v2.3.6** | **1.5.6 新增，已内嵌，非 AV 放行** |
 | DSH（`dsh`） | v5.7.0 | 已内嵌，非 AV 放行 |
 | OpenCode（`opencode`） | 内嵌 | 已内嵌，非 AV 放行 |
 | WorkBuddy（`workbuddy`） | v4.4 国内版 | 已内嵌，非 AV 放行 |
 | WorkBuddy AI 国际版（`workbuddy-ai`） | 懒人包 v1.3 | 已内嵌，非 AV 放行 |
-| 反重力（`anti-gravity`） | v3.2 | 阻断，等待可信替换来源 |
+| 反重力（`anti-gravity`） | v3.2 | 隔离载荷：默认阻断，勾选「我知晓 同意」后解锁 |
 
-允许清单是构建范围限制，**不是对这 5 个包的安全认证**。3 个隔离包的部署功能有意停用，不承诺全部原有功能保留。普通 UI、词库与检测逻辑保留，并修复 Cursor / WorkBuddy AI 嵌套预期路径导致的 5 项错误缺失提示；客体 Linux GUI 已做有限实测，但未验证 Windows 原生 GUI、便携自解压或五包真实安装器。
+允许清单是构建范围限制，**不是对这 6 个包的安全认证**。3 个隔离载荷默认不部署：未勾选知情同意时其安装 / 卸载 / 备份 / 恢复 / 深度验证全部被策略层拒绝，勾选后解锁，撤销即恢复阻断。新增的 Claude 包沿用同一准入模型（脚本来源审查 + 目录白名单 + 四层验证），端到端注入 / 校验 / 回滚已在临时 HOME 实测通过（88 / 88）。普通 UI、词库与检测逻辑保留，并修复 Cursor / WorkBuddy AI 嵌套预期路径导致的 5 项错误缺失提示；客体 Linux GUI 已做有限实测，但未验证 Windows 原生 GUI、便携自解压或六包真实安装器。
 
-Codex 包使用已确认名称「冷咖啡石井 v10.4」，胖虎是另一分支。本地副本命中不代表已证明官方厂商或原作者恶意。国内 WorkBuddy 与国际 WorkBuddy AI 仍为两张卡片，配置根分别为 `~/.workbuddy`、`~/.workbuddy-ai`。
+Codex 包使用已确认名称「冷咖啡石井 v10.4」，胖虎是另一分支。本地副本命中不代表已证明官方厂商或原作者恶意。国内 WorkBuddy 与国际 WorkBuddy AI 仍为两张卡片，配置根分别为 `~/.workbuddy`、`~/.workbuddy-ai`。Claude Code 卡配置根按 `CLAUDE_CONFIG_DIR` → `CLAUDE_HOME` → `~/.claude` 顺序解析，与包内 `install-claude.py` 完全一致。
 
 ---
 
 ## 界面展示
 
-最新证据为[最终 Windows ASAR 在 Linux Electron 44.4.3 下的 GUI 汇总](./release/gui-verification-1.5.5-electron44.4.3-ay5toza1/SUMMARY.json)：132 项检查通过，20 张截图；这不是 Windows 原生运行验证。
+1.5.5 的证据为[最终 Windows ASAR 在 Linux Electron 44.4.3 下的 GUI 汇总](./release/gui-verification-1.5.5-electron44.4.3-ay5toza1/SUMMARY.json)：132 项检查通过，20 张截图；这不是 Windows 原生运行验证。1.5.6 的界面改动（Claude 卡 + 知情同意勾选框）已由 `npm test` / `npm run test:security` / `tsc --noEmit` 覆盖，尚未在实机 GUI 截图验证。
 
 [查看本轮 20 张截图](./release/gui-verification-1.5.5-electron44.4.3-ay5toza1/gui-electron44.4.3-linux-no-sandbox-20260920T150459Z-coykj9fm/screenshots/)
 
-以下是 **v1.5.4 历史截图**，仅展示界面设计，不是 1.5.5 的实机验证，也不表示隔离包现可安装。
+以下是 **v1.5.4 历史截图**，仅展示界面设计，不是 1.5.6 的实机验证，也不表示隔离载荷已获安全认证。
 
 ![工具箱总览](./docs/screenshots/toolbox.png)
 
@@ -94,11 +95,11 @@ Codex 包使用已确认名称「冷咖啡石井 v10.4」，胖虎是另一分�
 
 以下是功能设计；本轮只验证了后文明确列出的界面与阻断行为，不能将其扩大为全部功能通过。涉及启动客户端、脚本或安装器的路径仍需独立验证；不得用旧二进制或隔离样本补齐。
 
-### 1. 八张卡片管理，五包允许发布、三包阻断
+### 1. 九张卡片管理，六包允许发布、三条旧载荷知情同意解锁
 
 - **自动识别安装路径**：扫常见安装目录 + 配置目录，找不到才让你手动选
 - **真实平台图标**：直接从各客户端 exe 提取，不是手绘贴图
-- **部署入口**：原设计调用包内安装 / 卸载脚本；1.5.5 已隔离 3 条包部署路线，不再承诺八包全部可部署。其余 5 包也须经可信源审查和干净环境验证后发布
+- **部署入口**：原设计调用包内安装 / 卸载脚本；1.5.6 的 3 条旧载荷路线默认阻断，仅在用户勾选「我知晓 同意」后解锁，撤销即回阻断。其余 6 包也须经可信源审查和干净环境验证后发布
 - **装前备份**：可把 `~/.codex`、`~/.dsh`、`~/.gemini`、`~/.workbuddy`、`~/.workbuddy-ai` 等配置目录整份复制到本地备份区
 - **包信息自动读取**：从 `package.json` / `README-CN.txt` / 安装脚本顶部注释里解析版本号与来源
 - **基线快照比对**：给每个包建 SHA-256 基线，之后随时比对，精确列出新增 / 删除 / 修改
@@ -134,13 +135,13 @@ Codex 包使用已确认名称「冷咖啡石井 v10.4」，胖虎是另一分�
 
 ### 4. 内嵌包发布范围
 
-最终产物的 `resources/packs` 仅包含上述 5 包；`codex`、`codex-panghu`、`anti-gravity` 继续阻断，不得沿用旧副本恢复部署。真实 NSIS → 7z → ASAR 解包核对了 3066 个文件，版本与资源配置一致；这不是在 Windows 上启动便携 EXE 的测试。
+1.5.6 计划的 `resources/packs` 包含上述 6 包；`codex`、`codex-panghu`、`anti-gravity` 默认阻断（用户勾选知情同意后才解锁，且不得沿用旧副本作为恢复源）。1.5.5 实际产物只含当时 5 包。真实 NSIS → 7z → ASAR 解包核对了 3066 个文件，版本与资源配置一致；这不是在 Windows 上启动便携 EXE 的测试。
 
 原路径解析设计为 **imported > external > embedded**。来源徽章只是位置说明，导入或指定外部目录不等于通过安全审核。
 
 ### 5. 破甲词库
 
-最终保留 3134 条词库，材料与词库字节保持一致；本轮 Linux GUI 已验证词库加载、搜索和纯文本详情。React `<pre>` 显示不执行活动 HTML 或 OS 命令，**但用户使用词库注入会写入下游 AI 规则，不能称所有用途都惰性无害**。本轮未执行注入 / 清理或五包安装器。
+最终保留 3134 条词库，材料与词库字节保持一致；本轮 Linux GUI 已验证词库加载、搜索和纯文本详情。React `<pre>` 显示不执行活动 HTML 或 OS 命令，**但用户使用词库注入会写入下游 AI 规则，不能称所有用途都惰性无害**。v1.5.5 那轮未执行注入 / 清理或五包安装器；1.5.6 这一轮已对 Claude 包在临时 HOME 完成 inject → verify(88/88) → 幂等重跑 → restore 全流程实测，其余五包仍未实机安装。
 
 ---
 
@@ -274,7 +275,7 @@ dango-desk/
 ├─ docs/screenshots/    # 历史界面截图，非 1.5.5 验证
 ├─ release/1.5.5-SECURITY-REPORT.md # 用户可直接阅读的安全摘要
 ├─ tests/               # 最终 31 项：29 通过、2 条件跳过；旧执行型测试须先审查
-├─ packed-packs/        # 本地包副本；后续发布仅限 5 包允许清单，仍需独立审核
+├─ packed-packs/        # 本地包副本；后续发布仅限 6 包允许清单，仍需独立审核
 ├─ scripts/
 │  ├─ quarantine-known-infection.cjs # 已执行 dry-run / --apply，样本字节保留
 │  ├─ preflight-security.cjs # 已知 IOC 与发布前置检查

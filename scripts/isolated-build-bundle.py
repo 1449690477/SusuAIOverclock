@@ -65,7 +65,7 @@ for r in manifest['files']:
 (REPORTS / 'reviewed-source-updates.json').write_text(json.dumps(source_changes, indent=2) + '\n')
 out = BASE / 'deliverables'
 out.mkdir(exist_ok=True)
-archive = out / 'SusuAIOverclock-1.5.5-portable-electron44.4.3-isolated.zip'
+archive = out / 'SusuAIOverclock-1.5.6-portable-electron44.4.3-isolated.zip'
 if archive.exists():
     raise RuntimeError('Refusing to overwrite existing delivery archive')
 files = {exe.name: exe}

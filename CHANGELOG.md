@@ -2,9 +2,39 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-> **当前状态（2026-09-20）：1.5.5 / Electron 44.4.3 已完成本地客体隔离构建，仅 ZIP 交付；ClamAV 仍报告 29 个 Infected files、54 条告警，不是 AV 放行。** Windows 宿主仍受感染，51 个项目样本继续隔离。已发布 GitHub Release v1.5.5。1.5.4 及更早条目只作历史记录，旧安全保证失效，不要恢复或运行旧样本。详见 [SECURITY-1.5.5](./docs/SECURITY-1.5.5.md)。
+> **当前状态（2026-09-21）：1.5.6 源码与策略已就绪（六发布包 + 三条旧载荷知情同意解锁 + Claude Code 破甲包），全套自动化测试通过；二进制产物需在隔离构建环境产出。** 1.5.5 的隔离与替换结论继续有效：ClamAV 对 1.5.5 归档报告的 29 个命中是安全案例文档 / 示例代码 / 词库的**内容签名**，不是此前的 `R.exe` / `N.exe` 投放器，但也不构成 AV 放行。Windows 宿主仍受感染，51 个项目样本继续隔离。1.5.4 及更早条目只作历史记录，旧安全保证失效，不要恢复或运行旧样本。详见 [SECURITY-1.5.5](./docs/SECURITY-1.5.5.md)。
 
 ---
+
+## [1.5.6] — 2026-09-21 · 隔离包知情同意解锁 + Claude Code 破甲包
+
+### 新增
+
+- **Claude Code 破甲包（`claude`）成为第六个发布包**：内嵌 `packed-packs/claude`，冷咖啡 CHA v2.3.6 Claude 席位。`install-claude.py inject` 写入 88 个目标（`CLAUDE.md` 标记块 1 项 + `rules/cha-breakopen.md` 1 项 + 86 个 `SKILL.md`，含 6 父路由 / 80 叶子），`restore` 按备份与标记精准回滚。
+  - 部署计划：安装 `install-claude.py inject`（kind `py`），卸载 `install-claude.py restore`，备份目录 `~/.claude`（尊重 `CLAUDE_CONFIG_DIR` → `CLAUDE_HOME` → `~/.claude` 解析顺序）。
+  - L4 会话层通道：`cli`，`claude -p <prompt>` 无副作用问答，`--version` 探测。
+  - 配置层检查：`CLAUDE.md` 含 `CHA-CLAUDE-POJIA:BEGIN`、`rules/cha-breakopen.md` 存在、`skills/cha-*` 至少一个 `SKILL.md`。
+  - 新增品牌图标（clay 陶土色八芒星）与 `--clay` 系列 CSS 变量；来源识别签名仅对本包白名单，其他 id 不得复用 Claude 目录树。
+- **隔离载荷改为知情同意（consent-required）解锁**：`codex`、`codex-panghu`、`anti-gravity` 三个旧载荷不再强制隔离，但也不默认放行。用户在卡片上勾选「我知晓 同意」后，安装 / 卸载 / 备份 / 恢复 / 深度验证才解锁；撤销即恢复 fail-closed。
+  - 新增 IPC `dango:setConsent(id, granted)`，只接受隔离名单内的 id，落盘到 `state.json` 的 `consents`，并在每次 `loadState()` 时同步进不可变策略寄存器 —— 渲染层复选框不是安全边界。
+  - 未勾选时 `deployPlanFor(id)` 仍返回空计划（`install:null`），`probeRuntime` / `assertPackAllowed` 直接拒绝，行为与 1.5.5 的强制隔离完全一致。
+  - 勾选后从 `LEGACY_QUARANTINE_PLANS`（逐字取自 v1.5.4）取回可执行定义，L4 通道从 `none` 提升为 `cli` / `gui`。
+
+### 变更
+
+- 发布许可名单扩充为六包：`cursor`、`dsh`、`claude`、`opencode`、`workbuddy`、`workbuddy-ai`；包卡总数 9（6 发布 + 3 隔离）。
+- `main.cjs` 不再直接读取 `core.DEPLOY_PLANS` / `core.L4_CHANNELS`，统一走 `core.deployPlanFor(id)` 与 `core.l4ChannelFor(id)`；CLI 验证参数按通道登记表取，移除 codex 专用硬编码。
+- `findCodexCliInfo` 保持纯路径探测（未知版本候选一律不执行，避免触发受感染 CLI），并新增独立的 `findClaudeCliInfo`。
+- 版本号全链路对齐 1.5.6：`package.json` / `package-lock.json` / 构建预检硬断言 / 隔离构建与归档校验脚本。
+
+### 验证
+
+- `npm test`：115 / 115 通过。
+- `npm run test:security`（含 `DANGO_TEST_REAL_PACKS=1` 真实树只读检查）：39 / 39 通过。
+- `tsc --noEmit`：无错误。
+- Claude 包端到端实测（临时 HOME）：`inject` 写入 88 / 备份 0 → `verify` 88/88 → 二次 `inject` 幂等（88 写入 / 88 备份）→ `verify` 仍 88/88 → `restore` 88 复原，`CLAUDE.md` 标记块、`rules/cha-breakopen.md`、`skills/*` 全部清理干净。
+- 知情同意链路实测：三个隔离包未勾选时 `blockReason=BLOCKED`、`plan.install=null`；勾选后 `install-replica.ps1` 可达且 L4 提升为 `cli`；撤销后立即回到 fail-closed。
+
 
 ## [1.5.5] — 2026-09-20 · 本地构建完成，AV 告警未解除
 

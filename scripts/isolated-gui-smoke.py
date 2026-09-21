@@ -415,7 +415,7 @@ if __name__ == '__main__':
     parser.add_argument('--runtime', required=True, help='Official Electron version, e.g. 44.4.3')
     parser.add_argument('--runtime-sha256', help='Independently obtained official Linux x64 ZIP SHA-256 (required for stage)')
     parser.add_argument('--artifact-sha256', help='Expected final portable EXE SHA-256 (read-only identity check)')
-    parser.add_argument('--app-version', default='1.5.5')
+    parser.add_argument('--app-version', default='1.5.6')
     parser.add_argument('--node', help='Explicit trusted guest Node executable, otherwise discover under this root or /opt')
     parser.add_argument('mode', choices=['inspect', 'stage', 'wine', 'linux', 'linux-no-sandbox', 'finalize', 'review', '_network'])
     parser.add_argument('extra', nargs='*')

@@ -11,7 +11,7 @@ assert(options.root && /^\d+\.\d+\.\d+$/.test(options.runtime || ''), '--root an
 const root = path.resolve(options.root);
 const runtime = options.runtime;
 const staged = path.join(root, 'gui-runtime', `electron-${runtime}`, 'linux-x64');
-const expectedAppVersion = process.env.GUI_APP_VERSION || '1.5.5';
+const expectedAppVersion = process.env.GUI_APP_VERSION || '1.5.6';
 const { _electron, chromium } = require(path.join(root, 'project/node_modules/playwright-core'));
 const out = process.env.GUI_RUN_DIR;
 const mode = process.env.GUI_MODE;
